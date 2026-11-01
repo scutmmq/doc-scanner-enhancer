@@ -1,0 +1,12 @@
+{
+  "name": "doc-scanner-enhancer-root",
+  "version": "1.0.0",
+  "description": "手机文档扫描与可读性增强系统 (DocScanner-Enhancer) - 华南理工大学《数字图像处理》课程设计大作业",
+  "scripts": {
+    "server": ".venv/bin/python3 -m src.server",
+    "cli": ".venv/bin/python3 -m src.cli",
+    "test": ".venv/bin/pytest tests/ -v",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build"
+  }
+}

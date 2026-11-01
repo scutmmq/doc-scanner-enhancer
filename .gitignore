@@ -42,3 +42,7 @@ scratch/
 .vscode/
 *.swp
 *.swo
+node_modules/
+frontend/node_modules/
+data/outputs/
+data/samples/experiment_images/
