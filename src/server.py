@@ -209,7 +209,21 @@ if os.path.exists(frontend_dist):
 
 def run():
     import uvicorn
-    uvicorn.run("src.server:app", host="0.0.0.0", port=8000, reload=True)
+    import socket
+
+    port = int(os.environ.get("PORT", 8080))
+    # 自动探测端口占用并顺延
+    for p in [port, 8088, 8888, 9000]:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(('127.0.0.1', p)) != 0:
+                port = p
+                break
+
+    print(f"\n=======================================================")
+    print(f"🚀 DocScanner-Enhancer 服务已启动!")
+    print(f"👉 本地浏览器直接访问: http://localhost:{port}")
+    print(f"=======================================================\n")
+    uvicorn.run("src.server:app", host="0.0.0.0", port=port, reload=False)
 
 
 if __name__ == "__main__":

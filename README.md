@@ -62,13 +62,16 @@ python -m src.cli --input data/samples/ --output-dir data/outputs/
 
 ### 4. 启动前后端交互工作台 (答辩演示推荐)
 ```bash
-# 终端 1：启动 FastAPI 算法服务 (默认端口 8000)
+# 启动算法与 Web 服务 (默认端口 8080，避免 8000 冲突)
 python -m src.server
+```
+打开浏览器访问：`http://localhost:8080` 即可直接操作！
 
-# 终端 2：启动前端交互页面 (默认端口 5173，自动代理 API)
+如需进行前端热重载开发：
+```bash
 npm --prefix frontend run dev
 ```
-打开浏览器访问：`http://localhost:5173` 或直接访问 `http://localhost:8000`。
+前端开发服务器为：`http://localhost:5173`。
 
 ---
 
