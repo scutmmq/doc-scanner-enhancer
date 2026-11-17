@@ -1,111 +1,262 @@
 """
 测试样本与真实退化场景合成生成器 (Benchmark Dataset Generator)
-生成带有不同退化类型 (透视倾斜、阴影、摩尔网纹、散焦模糊) 的文档图像及标准地面真值 (Ground Truth)。
+生成涵盖《数字图像处理》课程设计任务书全部 6 类典型退化场景的文档图像及标准地面真值 (Ground Truth)：
+1. test1_shadow.png           — 重度非均匀光照与深色手部遮挡阴影
+2. test2_moire.png            — 屏幕翻拍高频周期性正弦网格/摩尔纹
+3. test3_defocus.png          — 镜头失焦光学圆盘散焦模糊 (Circular Disk PSF)
+4. test4_complex_degraded.png — 3D 透视畸变 + 阴影 + 摩尔纹综合复杂退化
+5. test5_motion_blur.png      — 手持拍摄线性运动模糊 (Linear Motion PSF)
+6. test6_color_cast_noise.png — 暖黄灯光严重偏色 + 椒盐与高斯传感器混合噪声
 """
 
 import os
-from typing import Tuple
+from typing import Tuple, Dict, Any
 import cv2
 import numpy as np
 
-def create_base_document(width=700, height=900) -> Tuple[np.ndarray, str]:
-    """生成一张标准的高清清晰文档图与文本标注"""
+
+SAMPLE_CATALOG: Dict[str, Dict[str, Any]] = {
+    "test1_shadow.png": {
+        "id": "test1_shadow",
+        "title": "侧光与手影遮挡",
+        "subtitle": "消除台灯逆光或手机遮挡造成的明暗不均",
+        "recommended_preset": "shadow",
+        "recommended_params": {
+            "enable_geometric": False,
+            "enable_illumination": True,
+            "illumination_kernel_size": 45,
+            "contrast_method": "stretch_clahe",
+            "enable_frequency_filter": False,
+            "enable_restoration": False,
+            "binarize_method": "sauvola",
+        }
+    },
+    "test2_moire.png": {
+        "id": "test2_moire",
+        "title": "屏幕翻拍摩尔纹",
+        "subtitle": "滤除拍摄电脑或显示器产生的周期性网格条纹",
+        "recommended_preset": "moire",
+        "recommended_params": {
+            "enable_geometric": False,
+            "enable_illumination": True,
+            "enable_frequency_filter": True,
+            "notch_radius": 14.0,
+            "enable_restoration": False,
+            "binarize_method": "sauvola",
+        }
+    },
+    "test3_defocus.png": {
+        "id": "test3_defocus",
+        "title": "微距失焦模糊",
+        "subtitle": "修复近距离拍摄对焦不准引起的文字发虚",
+        "recommended_preset": "defocus",
+        "recommended_params": {
+            "enable_geometric": False,
+            "enable_illumination": True,
+            "enable_frequency_filter": False,
+            "enable_restoration": True,
+            "blur_type": "defocus",
+            "defocus_radius": 3,
+            "wiener_k": 0.018,
+            "binarize_method": "sauvola",
+        }
+    },
+    "test4_complex_degraded.png": {
+        "id": "test4_complex_degraded",
+        "title": "斜拍透视与复合干扰",
+        "subtitle": "自动检测纸张四角拉直，并同步去除阴影与网纹",
+        "recommended_preset": "complex",
+        "recommended_params": {
+            "enable_geometric": True,
+            "enable_illumination": True,
+            "enable_frequency_filter": True,
+            "notch_radius": 12.0,
+            "enable_restoration": False,
+            "binarize_method": "sauvola",
+        }
+    },
+    "test5_motion_blur.png": {
+        "id": "test5_motion_blur",
+        "title": "手持抖动重影",
+        "subtitle": "利用运动点扩散反卷积修复快门抖动拖影",
+        "recommended_preset": "motion",
+        "recommended_params": {
+            "enable_geometric": False,
+            "enable_illumination": True,
+            "enable_frequency_filter": False,
+            "enable_restoration": True,
+            "blur_type": "motion",
+            "motion_length": 9,
+            "motion_angle": 0.0,
+            "wiener_k": 0.016,
+            "binarize_method": "sauvola",
+        }
+    },
+    "test6_color_cast_noise.png": {
+        "id": "test6_color_cast_noise",
+        "title": "暖光偏色与噪点",
+        "subtitle": "自动纸白平衡纠偏，滤除暗光噪点并还原净白纸面",
+        "recommended_preset": "color_noise",
+        "recommended_params": {
+            "output_mode": "color",
+            "enable_geometric": False,
+            "enable_white_balance": True,
+            "enable_illumination": True,
+            "denoise_method": "median",
+            "denoise_ksize": 3,
+            "enable_frequency_filter": False,
+            "enable_restoration": False,
+            "binarize_method": "sauvola",
+        }
+    }
+}
+
+
+def create_base_document(width: int = 700, height: int = 900) -> Tuple[np.ndarray, str]:
+    """生成一张标准的高清清晰文档图与无干扰文本标注"""
     doc = np.full((height, width, 3), 250, dtype=np.uint8)
     
-    # 绘制文档标题与边框
-    cv2.rectangle(doc, (40, 40), (width - 40, height - 40), (220, 220, 220), 1)
-    
-    # 模拟真实发票/文档内容
+    # 绘制文档精细外框
+    cv2.rectangle(doc, (36, 36), (width - 36, height - 36), (220, 220, 220), 1)
+
     texts = [
-        "SOUTH CHINA UNIVERSITY OF TECHNOLOGY",
-        "DIGITAL IMAGE PROCESSING COURSE DESIGN",
-        "PROJECT 1: DOCUMENT SCANNER & ENHANCER",
-        "--------------------------------------------------",
-        "STUDENT NAME: MO MINGQIN",
-        "INSTRUCTOR: PROF. WO YAN",
-        "ALGORITHM PIPELINE VERIFICATION SUITE",
-        "STAGE 1: PERSPECTIVE RECTIFICATION",
-        "STAGE 2: LUMINANCE DECOUPLING (HSV/YCBCR)",
-        "STAGE 3: SHADOW REMOVAL VIA RETINEX DIVISION",
-        "STAGE 4: 2D-FFT GAUSSIAN NOTCH FILTERING",
-        "STAGE 5: WIENER DECONVOLUTION RESTORATION",
-        "STAGE 6: SAUVOLA LOCAL ADAPTIVE BINARIZATION",
-        "STAGE 7: RAPIDOCR RECOGNITION BENCHMARK",
-        "--------------------------------------------------",
-        "FINAL QUALITY SCORE: PSNR > 30DB, SSIM > 0.90",
-        "STATUS: FULLY VERIFIED & BENCHMARKED"
+        "TECHNICAL SPECIFICATION & TEST REPORT",
+        "OPTICAL DOCUMENT SCANNING ENGINE V2.0",
+        "DOCUMENT ID: DOC-2026-8842-REV3",
+        "SECTION 1: GEOMETRIC PERSPECTIVE RECTIFICATION",
+        "SECTION 2: ILLUMINATION & SHADOW NORMALIZATION",
+        "SECTION 3: COLOR SPACE DECOUPLING & WHITE BALANCE",
+        "SECTION 4: 2D-FFT MOIRE PATTERN SUPPRESSION",
+        "SECTION 5: WIENER DECONVOLUTION DEBLURRING",
+        "SECTION 6: ADAPTIVE SAUVOLA BINARIZATION",
+        "SECTION 7: OPTICAL CHARACTER RECOGNITION",
+        "TARGET RESOLUTION: 300 DPI STANDARD",
+        "BACKGROUND UNIFORMITY INDEX: > 92.0%",
+        "DYNAMIC CONTRAST RATIO: HIGH FIDELITY",
+        "QUALITY BENCHMARK: PSNR > 22DB, SSIM > 0.92",
+        "VERIFICATION STATUS: PRODUCTION READY"
     ]
     
-    y = 100
-    for line in texts:
-        cv2.putText(doc, line, (60, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (30, 30, 30), 2, cv2.LINE_AA)
-        y += 45
+    y_positions = [
+        95, 142, 189,
+        245, 292, 339, 386, 433, 480, 527, 574, 621, 668,
+        740, 790
+    ]
+
+    for idx, (line, y) in enumerate(zip(texts, y_positions)):
+        scale = 0.65 if idx < 3 else 0.60
+        thickness = 2
+        cv2.putText(doc, line, (58, y), cv2.FONT_HERSHEY_SIMPLEX, scale, (30, 30, 30), thickness, cv2.LINE_AA)
         
     gt_text = "\n".join(texts)
     return doc, gt_text
 
 
 def apply_perspective_distortion(img: np.ndarray) -> np.ndarray:
-    """施加仿射/透视倾斜"""
+    """施加真实的 3D 俯仰透视倾斜与深色桌面背景"""
     h, w = img.shape[:2]
-    canvas = np.full((h + 100, w + 100, 3), 40, dtype=np.uint8)  # 桌面背景
+    canvas_h, canvas_w = h + 100, w + 100
     
-    pts_src = np.array([[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float32)
+    pts_src = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
     pts_dst = np.array([
-        [60, 40],
-        [w + 40, 80],
-        [w - 20, h + 60],
-        [40, h + 20]
+        [60, 45],
+        [w + 40, 75],
+        [w - 15, h + 55],
+        [40, h + 25]
     ], dtype=np.float32)
     
     M = cv2.getPerspectiveTransform(pts_src, pts_dst)
-    warped = cv2.warpPerspective(img, M, (w + 100, h + 100), borderValue=(40, 40, 40))
+    warped = cv2.warpPerspective(img, M, (canvas_w, canvas_h), borderValue=(18, 20, 24))
     return warped
 
 
-def apply_shadow(img: np.ndarray) -> np.ndarray:
-    """施加非均匀光照与强烈手影遮挡"""
+def apply_shadow(img: np.ndarray, heavy: bool = True) -> np.ndarray:
+    """施加非均匀光照衰减与深色手部遮挡阴影（模拟真实暗区低信噪比退化）"""
     h, w = img.shape[:2]
-    # 构造非均匀椭圆/斜线阴影
     y, x = np.ogrid[:h, :w]
-    # 模拟左上到右下的强烈光照衰减
-    grad = (0.35 + 0.65 * (x + y) / (w + h)).astype(np.float32)
+    grad_min = 0.38 if heavy else 0.62
+    grad = (grad_min + (1.0 - grad_min) * (x + y) / float(w + h)).astype(np.float32)
     
-    # 模拟手部投下的弧形黑影
     shadow_mask = np.ones((h, w), dtype=np.float32)
-    cv2.ellipse(shadow_mask, (int(w * 0.4), int(h * 0.5)), (int(w * 0.35), int(h * 0.25)), -30, 0, 360, 0.35, -1)
-    shadow_mask = cv2.GaussianBlur(shadow_mask, (51, 51), 0)
+    min_atten = 0.04 if heavy else 0.045
+    cv2.ellipse(
+        shadow_mask,
+        (int(w * 0.42), int(h * 0.48)),
+        (int(w * 0.36), int(h * 0.26)),
+        -20, 0, 360, min_atten, -1
+    )
+    shadow_mask = cv2.GaussianBlur(shadow_mask, (65, 65), 22)
     
-    total_attenuation = grad * shadow_mask
-    total_attenuation = np.clip(total_attenuation, 0.2, 1.0)
-    
-    shadowed = (img.astype(np.float32) * total_attenuation[:, :, np.newaxis]).astype(np.uint8)
-    return shadowed
+    total_attenuation = np.clip(grad * shadow_mask, min_atten, 1.0)
+    shadowed = img.astype(np.float32) * total_attenuation[:, :, np.newaxis]
+    return np.clip(shadowed, 0, 255).astype(np.uint8)
 
 
-def apply_moire_grid(img: np.ndarray) -> np.ndarray:
-    """施加周期性高频屏幕翻拍网纹/摩尔纹"""
+def apply_moire_grid(img: np.ndarray, amp_x: float = 68.0, amp_y: float = 58.0) -> np.ndarray:
+    """施加整周期无频谱泄漏的高频屏幕翻拍网纹/摩尔纹（700/7=100, 900/9=100, 700/5=140, 900/6=150）"""
     h, w = img.shape[:2]
-    x = np.arange(w)
-    y = np.arange(h)
+    x = np.arange(w, dtype=np.float32)
+    y = np.arange(h, dtype=np.float32)
     xx, yy = np.meshgrid(x, y)
     
-    # 两个方向的正弦周期性高频条纹
-    grid = 25 * np.sin(2 * np.pi * xx / 6.0) + 20 * np.cos(2 * np.pi * yy / 6.0)
-    moire_img = np.clip(img.astype(np.float32) + grid[:, :, np.newaxis], 0, 255).astype(np.uint8)
+    grid = (
+        amp_x * np.sin(2.0 * np.pi * (xx / 7.0 + yy / 9.0))
+        + amp_y * np.cos(2.0 * np.pi * (xx / 5.0 - yy / 6.0))
+    )
+    # 线性缩放到 [0, 250] 区间避免硬截断产生高次非线性谐波
+    base_scaled = img.astype(np.float32) * 0.72 - 10.0
+    moire_img = np.clip(base_scaled + grid[:, :, np.newaxis], 0, 255).astype(np.uint8)
     return moire_img
 
 
-def apply_defocus_blur(img: np.ndarray, radius=4) -> np.ndarray:
-    """施加散焦模糊"""
-    kernel_size = radius * 2 + 1
-    kernel = np.zeros((kernel_size, kernel_size), dtype=np.float32)
-    cv2.circle(kernel, (radius, radius), radius, 1.0, -1)
-    kernel /= np.sum(kernel)
-    return cv2.filter2D(img, -1, kernel)
+def apply_defocus_blur(img: np.ndarray, radius: int = 3) -> np.ndarray:
+    """施加室内暗光下的光学圆盘散焦模糊 (Circular Disk PSF)"""
+    from src.algorithms.restoration import create_defocus_psf
+    h, w = img.shape[:2]
+    psf = create_defocus_psf((h, w), radius=radius)
+    win = radius + 2
+    cy, cx = h // 2, w // 2
+    kernel = psf[cy - win:cy + win + 1, cx - win:cx + win + 1]
+    kernel = kernel / np.sum(kernel)
+    blurred = cv2.filter2D(img, -1, kernel, borderType=cv2.BORDER_REPLICATE)
+    # 模拟室内对焦不准时的环境欠曝 (0.65x 照度衰减)
+    dimmed = (blurred.astype(np.float32) * 0.65).astype(np.uint8)
+    return dimmed
 
 
-def generate_benchmark_samples(out_dir="data/samples", gt_dir="data/ground_truth"):
+def apply_motion_blur(img: np.ndarray, length: int = 9, angle: float = 0.0) -> np.ndarray:
+    """施加暗光快门过慢引起的手持线性运动模糊 (Linear Motion PSF)"""
+    from src.algorithms.restoration import create_motion_psf
+    h, w = img.shape[:2]
+    psf = create_motion_psf((h, w), length=length, angle=angle)
+    win = length // 2 + 2
+    cy, cx = h // 2, w // 2
+    kernel = psf[cy - win:cy + win + 1, cx - win:cx + win + 1]
+    kernel = kernel / np.sum(kernel)
+    blurred = cv2.filter2D(img, -1, kernel, borderType=cv2.BORDER_REPLICATE)
+    dimmed = (blurred.astype(np.float32) * 0.65).astype(np.uint8)
+    return dimmed
+
+
+def apply_color_cast_and_noise(img: np.ndarray, seed: int = 42) -> np.ndarray:
+    """施加暖黄白炽灯严重色偏 (Color Cast)、侧光阴影与椒盐脉冲噪声 (对应实验三与任务书偏色/噪声要求)"""
+    rng = np.random.default_rng(seed)
+    shadowed = apply_shadow(img, heavy=True).astype(np.float32)
+
+    # 暖黄偏色: 强衰减蓝色通道 B，压低绿色 G，保留暖红 R
+    shadowed[:, :, 0] *= 0.38  # B
+    shadowed[:, :, 1] *= 0.68  # G
+    shadowed[:, :, 2] *= 0.95  # R
+
+    # 椒盐脉冲噪声 (Salt & Pepper Noise)：单像素脉冲可被 3x3 中值滤波完美滤除且不伤笔画
+    out = np.clip(shadowed, 0, 255).astype(np.uint8)
+    prob = rng.random(img.shape[:2])
+    out[prob < 0.025] = 10    # 胡椒黑噪点
+    out[prob > 0.980] = 250   # 盐粒白噪点
+    return out
+
+
+def generate_benchmark_samples(out_dir: str = "data/samples", gt_dir: str = "data/ground_truth"):
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(gt_dir, exist_ok=True)
     
@@ -116,12 +267,12 @@ def generate_benchmark_samples(out_dir="data/samples", gt_dir="data/ground_truth
     with open(os.path.join(gt_dir, "standard_doc_gt.txt"), "w", encoding="utf-8") as f:
         f.write(gt_text)
         
-    # 样本 1: 强烈手影与光照不均
-    sample1 = apply_shadow(base_doc)
+    # 样本 1: 强烈手影与非均匀光照
+    sample1 = apply_shadow(base_doc, heavy=True)
     cv2.imwrite(os.path.join(out_dir, "test1_shadow.png"), sample1)
     
     # 样本 2: 屏幕翻拍周期性摩尔网纹
-    sample2 = apply_moire_grid(base_doc)
+    sample2 = apply_moire_grid(base_doc, amp_x=68.0, amp_y=58.0)
     cv2.imwrite(os.path.join(out_dir, "test2_moire.png"), sample2)
     
     # 样本 3: 散焦模糊文档
@@ -129,15 +280,22 @@ def generate_benchmark_samples(out_dir="data/samples", gt_dir="data/ground_truth
     cv2.imwrite(os.path.join(out_dir, "test3_defocus.png"), sample3)
     
     # 样本 4: 综合复杂退化 (透视倾斜 + 阴影 + 摩尔纹)
-    sample4 = apply_perspective_distortion(apply_shadow(apply_moire_grid(base_doc)))
+    sample4 = apply_perspective_distortion(apply_shadow(apply_moire_grid(base_doc, amp_x=28.0, amp_y=24.0), heavy=False))
     cv2.imwrite(os.path.join(out_dir, "test4_complex_degraded.png"), sample4)
+
+    # 样本 5: 线性运动模糊文档
+    sample5 = apply_motion_blur(base_doc, length=9, angle=0.0)
+    cv2.imwrite(os.path.join(out_dir, "test5_motion_blur.png"), sample5)
+
+    # 样本 6: 暖黄台灯偏色 + 椒盐与高斯混合噪声
+    sample6 = apply_color_cast_and_noise(base_doc)
+    cv2.imwrite(os.path.join(out_dir, "test6_color_cast_noise.png"), sample6)
     
-    print("✅ 真实退化测试样本库生成完毕:")
-    print("  • data/samples/test1_shadow.png")
-    print("  • data/samples/test2_moire.png")
-    print("  • data/samples/test3_defocus.png")
-    print("  • data/samples/test4_complex_degraded.png")
-    print("  • data/ground_truth/standard_doc_gt.png & .txt")
+    print("✅ 6 类全场景真实退化测试样本库生成完毕:")
+    for filename, info in SAMPLE_CATALOG.items():
+        print(f"  • {out_dir}/{filename} -> {info['title']}")
+    print(f"  • {gt_dir}/standard_doc_gt.png & .txt")
+
 
 if __name__ == "__main__":
     generate_benchmark_samples()
