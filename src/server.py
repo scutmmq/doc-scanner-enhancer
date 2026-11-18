@@ -78,7 +78,7 @@ async def health_check():
 
 
 @app.get("/api/v1/samples")
-async def list_benchmark_samples():
+def list_benchmark_samples():
     """获取内置 6 大典型退化测试样本列表（支持前端一键载入演示）"""
     _ensure_samples_exist()
     items = []
@@ -103,7 +103,7 @@ async def list_benchmark_samples():
 
 
 @app.get("/api/v1/samples/{sample_name}")
-async def get_benchmark_sample(sample_name: str):
+def get_benchmark_sample(sample_name: str):
     """读取指定内置测试样本原图与推荐参数"""
     _ensure_samples_exist()
     if sample_name not in SAMPLE_CATALOG:
@@ -130,7 +130,7 @@ async def get_benchmark_sample(sample_name: str):
 
 
 @app.post("/api/v1/enhance")
-async def enhance_document(
+def enhance_document(
     file: Optional[UploadFile] = File(None),
     sample_name: Optional[str] = Form(None),
     params_json: Optional[str] = Form(None)
@@ -143,7 +143,9 @@ async def enhance_document(
         matched_sample_name: Optional[str] = None
 
         if file is not None:
-            contents = await file.read()
+            contents = file.file.read()
+            if not contents:
+                raise HTTPException(status_code=400, detail="上传的图片文件为空")
             nparr = np.frombuffer(contents, np.uint8)
             raw_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             if file.filename and os.path.basename(file.filename) in SAMPLE_CATALOG:
@@ -158,7 +160,12 @@ async def enhance_document(
         if raw_img is None:
             raise HTTPException(status_code=400, detail="无法解析上传的图片文件")
 
-        cfg_dict = json.loads(params_json) if params_json else {}
+        try:
+            cfg_dict = json.loads(params_json) if params_json else {}
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="params_json 必须是有效的 JSON 对象")
+        if not isinstance(cfg_dict, dict):
+            raise HTTPException(status_code=400, detail="params_json 必须是 JSON 对象")
         if not matched_sample_name and cfg_dict.get("sample_name") in SAMPLE_CATALOG:
             matched_sample_name = cfg_dict.get("sample_name")
 
@@ -242,7 +249,8 @@ async def enhance_document(
             metrics = evaluate_quality_metrics(stage3_img, res["final_image"], raw_image=eval_input_img)
 
         ocr_comparison = OCREvaluator.evaluate_comparison(
-            eval_input_img, res["final_image"], ground_truth_text=gt_text
+            eval_input_img, res["final_image"], ground_truth_text=gt_text,
+            enhanced_result=(res["ocr_text"], res["ocr_boxes"])
         )
 
         return {
@@ -260,6 +268,8 @@ async def enhance_document(
                 "comparison": ocr_comparison
             }
         }
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -267,7 +277,7 @@ async def enhance_document(
 
 
 @app.post("/api/v1/sampling-lab")
-async def run_sampling_lab(
+def run_sampling_lab(
     file: Optional[UploadFile] = File(None),
     sample_name: Optional[str] = Form(None)
 ):
@@ -281,7 +291,9 @@ async def run_sampling_lab(
     gt_text = open(gt_txt_path, "r", encoding="utf-8").read() if os.path.exists(gt_txt_path) else None
 
     if file is not None:
-        contents = await file.read()
+        contents = file.file.read()
+        if not contents:
+            raise HTTPException(status_code=400, detail="上传的图片文件为空")
         target_img = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
         if not (file.filename and os.path.basename(file.filename) in SAMPLE_CATALOG):
             gt_text = None
@@ -300,7 +312,7 @@ async def run_sampling_lab(
 
 
 @app.post("/api/v1/evaluate")
-async def evaluate_images(
+def evaluate_images(
     raw_file: UploadFile = File(...),
     enhanced_file: UploadFile = File(...),
     gt_text: Optional[str] = Form(None)
@@ -308,8 +320,10 @@ async def evaluate_images(
     """
     独立评测对比接口：计算两张图的 PSNR、SSIM 及 OCR 识别准确率。
     """
-    raw_data = await raw_file.read()
-    enh_data = await enhanced_file.read()
+    raw_data = raw_file.file.read()
+    enh_data = enhanced_file.file.read()
+    if not raw_data or not enh_data:
+        raise HTTPException(status_code=400, detail="上传的图片文件为空")
 
     raw_img = cv2.imdecode(np.frombuffer(raw_data, np.uint8), cv2.IMREAD_COLOR)
     enh_img = cv2.imdecode(np.frombuffer(enh_data, np.uint8), cv2.IMREAD_COLOR)
