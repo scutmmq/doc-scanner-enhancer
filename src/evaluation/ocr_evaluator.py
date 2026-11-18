@@ -6,6 +6,7 @@
 """
 
 import re
+from threading import RLock
 from typing import Tuple, Dict, Any, Optional, List
 import numpy as np
 import cv2
@@ -33,16 +34,19 @@ class OCREvaluator:
     使用单例/按需懒加载避免重复初始化 ONNX 权重。
     """
     _ocr_engine = None
+    # RapidOCR 的检测/识别对象包含可变状态，仅串行化 OCR，避免阻塞 API 事件循环。
+    _engine_lock = RLock()
 
     @classmethod
     def get_engine(cls):
-        if cls._ocr_engine is None:
-            try:
-                from rapidocr_onnxruntime import RapidOCR
-                cls._ocr_engine = RapidOCR()
-            except Exception as e:
-                print(f"[警告] 初始化 RapidOCR 失败: {e}")
-                cls._ocr_engine = None
+        with cls._engine_lock:
+            if cls._ocr_engine is None:
+                try:
+                    from rapidocr_onnxruntime import RapidOCR
+                    cls._ocr_engine = RapidOCR()
+                except Exception as e:
+                    print(f"[警告] 初始化 RapidOCR 失败: {e}")
+                    cls._ocr_engine = None
         return cls._ocr_engine
 
     @classmethod
@@ -63,7 +67,8 @@ class OCREvaluator:
         else:
             img_bgr = image
 
-        result, _ = engine(img_bgr)
+        with cls._engine_lock:
+            result, _ = engine(img_bgr)
         if not result:
             return "", []
 
@@ -124,7 +129,9 @@ class OCREvaluator:
         cls,
         raw_image: np.ndarray,
         enhanced_image: np.ndarray,
-        ground_truth_text: Optional[str] = None
+        ground_truth_text: Optional[str] = None,
+        *,
+        enhanced_result: Optional[Tuple[str, List[Dict[str, Any]]]] = None
     ) -> Dict[str, Any]:
         """
         对增强前后的图像执行端到端对比评测。
@@ -133,11 +140,15 @@ class OCREvaluator:
             raw_image: 拍摄原始图 (手机倾斜/阴影/模糊/摩尔纹/偏色)
             enhanced_image: 经本系统全流程增强后的图像
             ground_truth_text: 标准文本真实值 (若有)
+            enhanced_result: 已提取的增强图文本与识别框，传入后复用结果，避免重复 OCR
         返回:
             综合评测对比字典 (包含 OCR 文本、识别率增益、CER/WER、置信度对比)
         """
         raw_text, raw_boxes = cls.extract_text(raw_image)
-        enhanced_text, enhanced_boxes = cls.extract_text(enhanced_image)
+        if enhanced_result is None:
+            enhanced_text, enhanced_boxes = cls.extract_text(enhanced_image)
+        else:
+            enhanced_text, enhanced_boxes = enhanced_result
 
         raw_conf = float(np.mean([b["score"] for b in raw_boxes])) * 100.0 if raw_boxes else 0.0
         enh_conf = float(np.mean([b["score"] for b in enhanced_boxes])) * 100.0 if enhanced_boxes else 0.0
