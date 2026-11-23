@@ -73,11 +73,11 @@ export const OpticalButton: React.FC<OpticalButtonProps> = ({
 
   const variantClasses =
     variant === 'primary'
-      ? 'bg-blue-600 hover:bg-blue-500 text-white border border-blue-400/50 shadow-[0_10px_30px_-6px_rgba(37,99,235,0.58)] hover:shadow-[0_14px_38px_-4px_rgba(59,130,246,0.75)]'
+      ? 'optical-fx-primary-solid bg-blue-600 hover:bg-blue-500 text-white border border-blue-400/50 shadow-[0_10px_28px_-6px_var(--accent-glow)] hover:shadow-[0_14px_36px_-4px_var(--accent-glow)]'
       : variant === 'pill'
-      ? 'bg-blue-600/95 hover:bg-blue-500 text-white border border-blue-400/40 shadow-[0_6px_22px_-4px_rgba(37,99,235,0.55)]'
+      ? 'optical-fx-primary-solid bg-blue-600/95 hover:bg-blue-500 text-white border border-blue-400/40 shadow-[0_6px_20px_-4px_var(--accent-glow)]'
       : variant === 'glass'
-      ? 'bg-white/[0.06] hover:bg-white/[0.12] text-slate-100 border border-white/20 hover:border-blue-400/60 backdrop-blur-md shadow-[0_12px_30px_-8px_rgba(0,0,0,0.65)]'
+      ? 'bg-white/[0.06] hover:bg-white/[0.12] text-slate-100 border border-white/20 hover:border-blue-400/60 backdrop-blur-md shadow-[0_10px_28px_-8px_rgba(0,0,0,0.4)]'
       : 'bg-[#131b2c] hover:bg-[#19243b] text-slate-100 border border-slate-700/80 hover:border-blue-500/50';
 
   return (

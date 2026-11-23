@@ -2,31 +2,341 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* ======================================================
+   DocScanner 三套精选工作台视觉主题令牌体系
+   1. darkroom (暗房光学 · 玄黑钴蓝)
+   2. paper    (宣纸晴空 · 博朗/苹果级暖白极简日间暗房)
+   3. leica    (徕卡暖金 · 暖石墨与阳极氧化黄铜胶片暗房)
+   ====================================================== */
+:root,
+[data-theme='darkroom'] {
   color-scheme: dark;
+  --bg-app: #060910;
+  --bg-header: rgba(11, 16, 27, 0.88);
+  --bg-panel: #0c111c;
+  --bg-card: #121928;
+  --bg-card-hover: #172136;
+  --bg-input: #090d16;
+  --bg-canvas: #070a12;
+  --border-subtle: rgba(148, 163, 184, 0.14);
+  --border-strong: rgba(148, 163, 184, 0.28);
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #8a99b0;
+  --accent: #2563eb;
+  --accent-hover: #3b82f6;
+  --accent-text: #60a5fa;
+  --accent-soft: rgba(37, 99, 235, 0.15);
+  --accent-border: rgba(59, 130, 246, 0.5);
+  --accent-glow: rgba(37, 99, 235, 0.5);
+  --accent-on: #ffffff;
+  --grid-dot: rgba(148, 163, 184, 0.14);
+  --canvas-lamp: rgba(59, 130, 246, 0.09);
+  --spotlight-rgb: 96, 165, 250;
+  --sheen-alpha: 0.15;
+  --card-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.65);
+  --doc-shadow: 0 24px 60px -14px rgba(0, 0, 0, 0.8);
+  --scroll-track: #0c111c;
+  --scroll-thumb: #1f2a40;
+}
+
+[data-theme='paper'] {
+  color-scheme: light;
+  --bg-app: #eeebe4;
+  --bg-header: rgba(252, 251, 248, 0.92);
+  --bg-panel: #faf9f5;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f3f1eb;
+  --bg-input: #f2efe8;
+  --bg-canvas: #e5e1d7;
+  --border-subtle: rgba(15, 23, 42, 0.1);
+  --border-strong: rgba(15, 23, 42, 0.2);
+  --text-primary: #111827;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --accent: #1d4ed8;
+  --accent-hover: #2563eb;
+  --accent-text: #1d4ed8;
+  --accent-soft: rgba(29, 78, 216, 0.09);
+  --accent-border: rgba(29, 78, 216, 0.36);
+  --accent-glow: rgba(29, 78, 216, 0.3);
+  --accent-on: #ffffff;
+  --grid-dot: rgba(15, 23, 42, 0.13);
+  --canvas-lamp: rgba(255, 255, 255, 0.55);
+  --spotlight-rgb: 29, 78, 216;
+  --sheen-alpha: 0.22;
+  --card-shadow: 0 8px 24px -10px rgba(15, 23, 42, 0.12);
+  --doc-shadow: 0 22px 48px -14px rgba(15, 23, 42, 0.26);
+  --scroll-track: #f2efe8;
+  --scroll-thumb: #cbd5e1;
+}
+
+[data-theme='leica'] {
+  color-scheme: dark;
+  --bg-app: #0f0e0c;
+  --bg-header: rgba(22, 20, 17, 0.9);
+  --bg-panel: #161411;
+  --bg-card: #1f1c18;
+  --bg-card-hover: #29251f;
+  --bg-input: #12100d;
+  --bg-canvas: #0c0b09;
+  --border-subtle: rgba(224, 204, 172, 0.13);
+  --border-strong: rgba(224, 204, 172, 0.26);
+  --text-primary: #f7f3eb;
+  --text-secondary: #d7cfc2;
+  --text-muted: #9b907f;
+  --accent: #d97706;
+  --accent-hover: #f59e0b;
+  --accent-text: #fbbf24;
+  --accent-soft: rgba(217, 119, 6, 0.16);
+  --accent-border: rgba(245, 158, 11, 0.5);
+  --accent-glow: rgba(217, 119, 6, 0.45);
+  --accent-on: #120e07;
+  --grid-dot: rgba(235, 204, 150, 0.13);
+  --canvas-lamp: rgba(245, 158, 11, 0.08);
+  --spotlight-rgb: 251, 191, 36;
+  --sheen-alpha: 0.17;
+  --card-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.72);
+  --doc-shadow: 0 26px 64px -14px rgba(0, 0, 0, 0.85);
+  --scroll-track: #161411;
+  --scroll-thumb: #352f27;
 }
 
 body {
   margin: 0;
-  font-family: 'Inter', sans-serif;
-  background-color: #0a0d14;
-  color: #f1f5f9;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  transition: background-color 0.28s ease, color 0.28s ease;
 }
 
-/* 隐藏原生滚动条并提供极简暗黑滚动条 */
+/* 暗房标定光学台面点阵 + 顶灯微聚光背景 */
+.ds-optical-stage {
+  background-color: var(--bg-canvas);
+  background-image:
+    radial-gradient(ellipse 68% 60% at 50% 44%, var(--canvas-lamp), transparent 72%),
+    radial-gradient(var(--grid-dot) 1px, transparent 1px);
+  background-size: 100% 100%, 22px 22px;
+}
+
+/* 工作台主题容器平滑过渡 */
+.ds-workbench-shell {
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  transition: background-color 0.28s ease, color 0.28s ease;
+}
+
+/* ======================================================
+   宣纸晴空 (paper) 主题对深色 Tailwind 原子类的全量无损映射
+   确保专业视图、统计看板、分辨率实验室与弹窗 100% 统一协调
+   ====================================================== */
+[data-theme='paper'] .ds-workbench-shell {
+  background-color: var(--bg-app) !important;
+  color: var(--text-primary) !important;
+}
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#070a10\] {
+  background-color: var(--bg-app) !important;
+}
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#0d121d\],
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#0d121d\]\/90 {
+  background-color: var(--bg-panel) !important;
+  box-shadow: var(--card-shadow);
+}
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#111827\],
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#111726\],
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#121826\],
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#131b2c\],
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#151d2e\],
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#161f33\] {
+  background-color: var(--bg-card) !important;
+}
+[data-theme='paper'] .ds-workbench-shell .hover\:bg-\[\#111827\]:hover,
+[data-theme='paper'] .ds-workbench-shell .hover\:bg-\[\#161f33\]:hover,
+[data-theme='paper'] .ds-workbench-shell .hover\:bg-\[\#172136\]:hover,
+[data-theme='paper'] .ds-workbench-shell .hover\:bg-\[\#182033\]:hover,
+[data-theme='paper'] .ds-workbench-shell .hover\:bg-\[\#192338\]:hover,
+[data-theme='paper'] .ds-workbench-shell .hover\:bg-\[\#19243b\]:hover,
+[data-theme='paper'] .ds-workbench-shell .hover\:bg-\[\#1b2740\]:hover,
+[data-theme='paper'] .ds-workbench-shell .hover\:bg-\[\#1e2a45\]:hover,
+[data-theme='paper'] .ds-workbench-shell .hover\:bg-\[\#161e30\]:hover,
+[data-theme='paper'] .ds-workbench-shell .hover\:bg-slate-800:hover,
+[data-theme='paper'] .ds-workbench-shell .hover\:bg-slate-800\/70:hover,
+[data-theme='paper'] .ds-workbench-shell .hover\:bg-slate-700:hover {
+  background-color: var(--bg-card-hover) !important;
+}
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#080b11\],
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#080b12\],
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#090c13\],
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#090d16\],
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#0a0f1a\]\/80,
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#0b0f19\],
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#0b101b\],
+[data-theme='paper'] .ds-workbench-shell .bg-\[\#0c1018\],
+[data-theme='paper'] .ds-workbench-shell .bg-slate-900,
+[data-theme='paper'] .ds-workbench-shell .bg-slate-900\/80,
+[data-theme='paper'] .ds-workbench-shell .bg-slate-900\/90,
+[data-theme='paper'] .ds-workbench-shell .bg-slate-800,
+[data-theme='paper'] .ds-workbench-shell .bg-slate-800\/80 {
+  background-color: var(--bg-input) !important;
+}
+[data-theme='paper'] .ds-workbench-shell .bg-blue-950\/30,
+[data-theme='paper'] .ds-workbench-shell .bg-blue-950\/40 {
+  background-color: rgba(29, 78, 216, 0.08) !important;
+}
+[data-theme='paper'] .ds-workbench-shell .border-slate-800,
+[data-theme='paper'] .ds-workbench-shell .border-slate-800\/90,
+[data-theme='paper'] .ds-workbench-shell .border-slate-800\/80,
+[data-theme='paper'] .ds-workbench-shell .border-slate-800\/70 {
+  border-color: var(--border-subtle) !important;
+}
+[data-theme='paper'] .ds-workbench-shell .border-slate-700,
+[data-theme='paper'] .ds-workbench-shell .border-slate-700\/90,
+[data-theme='paper'] .ds-workbench-shell .border-slate-700\/80 {
+  border-color: var(--border-strong) !important;
+}
+[data-theme='paper'] .ds-workbench-shell .text-white:not(.bg-blue-600):not(.bg-blue-600\/90):not(.bg-blue-600\/95):not(.optical-fx-primary):not(.ds-keep-white),
+[data-theme='paper'] .ds-workbench-shell .text-slate-100,
+[data-theme='paper'] .ds-workbench-shell .text-slate-200 {
+  color: var(--text-primary) !important;
+}
+[data-theme='paper'] .ds-workbench-shell .text-slate-300 {
+  color: var(--text-secondary) !important;
+}
+[data-theme='paper'] .ds-workbench-shell .text-slate-400,
+[data-theme='paper'] .ds-workbench-shell .text-slate-500,
+[data-theme='paper'] .ds-workbench-shell .text-slate-600 {
+  color: var(--text-muted) !important;
+}
+[data-theme='paper'] .ds-workbench-shell .text-amber-200,
+[data-theme='paper'] .ds-workbench-shell .text-amber-300 {
+  color: #b45309 !important;
+}
+[data-theme='paper'] .ds-workbench-shell .text-blue-200,
+[data-theme='paper'] .ds-workbench-shell .text-blue-300,
+[data-theme='paper'] .ds-workbench-shell .text-blue-400 {
+  color: #1d4ed8 !important;
+}
+[data-theme='paper'] .ds-workbench-shell .text-red-200,
+[data-theme='paper'] .ds-workbench-shell .text-red-300 {
+  color: #b91c1c !important;
+}
+[data-theme='paper'] .ds-workbench-shell .text-emerald-300,
+[data-theme='paper'] .ds-workbench-shell .text-emerald-400 {
+  color: #047857 !important;
+}
+/* 保持蓝色高亮按钮与深色浮层徽章内部文字纯白清晰 */
+[data-theme='paper'] .ds-workbench-shell .bg-blue-600,
+[data-theme='paper'] .ds-workbench-shell .bg-blue-600 *,
+[data-theme='paper'] .ds-workbench-shell .bg-blue-600\/90,
+[data-theme='paper'] .ds-workbench-shell .bg-blue-600\/90 *,
+[data-theme='paper'] .ds-workbench-shell .ds-keep-white,
+[data-theme='paper'] .ds-workbench-shell .ds-keep-white *,
+[data-theme='paper'] .ds-workbench-shell .optical-fx-primary-solid,
+[data-theme='paper'] .ds-workbench-shell .optical-fx-primary-solid * {
+  color: #ffffff !important;
+}
+[data-theme='paper'] .ds-workbench-shell .bg-slate-950\/65 {
+  background-color: rgba(244, 242, 236, 0.78) !important;
+}
+
+/* ======================================================
+   徕卡暖金 (leica) 主题对深色 Tailwind 原子类的暖色映射
+   暖石墨底座 + 阳极氧化黄铜/琥珀金高光，零冷蓝单调感
+   ====================================================== */
+[data-theme='leica'] .ds-workbench-shell {
+  background-color: var(--bg-app) !important;
+  color: var(--text-primary) !important;
+}
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#070a10\] {
+  background-color: var(--bg-app) !important;
+}
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#0d121d\],
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#0d121d\]\/90 {
+  background-color: var(--bg-panel) !important;
+}
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#111827\],
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#111726\],
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#121826\],
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#131b2c\],
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#151d2e\],
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#161f33\] {
+  background-color: var(--bg-card) !important;
+}
+[data-theme='leica'] .ds-workbench-shell .hover\:bg-\[\#19243b\]:hover,
+[data-theme='leica'] .ds-workbench-shell .hover\:bg-\[\#161f33\]:hover,
+[data-theme='leica'] .ds-workbench-shell .hover\:bg-\[\#192338\]:hover,
+[data-theme='leica'] .ds-workbench-shell .hover\:bg-\[\#1e2a45\]:hover {
+  background-color: var(--bg-card-hover) !important;
+}
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#080b11\],
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#080b12\],
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#090c13\],
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#090d16\],
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#0a0f1a\]\/80,
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#0b0f19\],
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#0b101b\],
+[data-theme='leica'] .ds-workbench-shell .bg-\[\#0c1018\],
+[data-theme='leica'] .ds-workbench-shell .bg-slate-900,
+[data-theme='leica'] .ds-workbench-shell .bg-slate-900\/80,
+[data-theme='leica'] .ds-workbench-shell .bg-slate-900\/90 {
+  background-color: var(--bg-input) !important;
+}
+[data-theme='leica'] .ds-workbench-shell .border-slate-800,
+[data-theme='leica'] .ds-workbench-shell .border-slate-800\/90,
+[data-theme='leica'] .ds-workbench-shell .border-slate-800\/80,
+[data-theme='leica'] .ds-workbench-shell .border-slate-700,
+[data-theme='leica'] .ds-workbench-shell .border-slate-700\/90,
+[data-theme='leica'] .ds-workbench-shell .border-slate-700\/80 {
+  border-color: var(--border-subtle) !important;
+}
+[data-theme='leica'] .ds-workbench-shell .bg-blue-600,
+[data-theme='leica'] .ds-workbench-shell .bg-blue-600\/90,
+[data-theme='leica'] .ds-workbench-shell .bg-blue-600\/95 {
+  background-color: #d97706 !important;
+  color: #140f08 !important;
+  border-color: rgba(251, 191, 36, 0.55) !important;
+}
+[data-theme='leica'] .ds-workbench-shell .bg-blue-600:hover,
+[data-theme='leica'] .ds-workbench-shell .hover\:bg-blue-500:hover {
+  background-color: #f59e0b !important;
+}
+[data-theme='leica'] .ds-workbench-shell .bg-blue-600\/15,
+[data-theme='leica'] .ds-workbench-shell .bg-blue-600\/20,
+[data-theme='leica'] .ds-workbench-shell .bg-blue-950\/30,
+[data-theme='leica'] .ds-workbench-shell .bg-blue-950\/40 {
+  background-color: rgba(217, 119, 6, 0.16) !important;
+}
+[data-theme='leica'] .ds-workbench-shell .border-blue-500,
+[data-theme='leica'] .ds-workbench-shell .border-blue-500\/60,
+[data-theme='leica'] .ds-workbench-shell .border-blue-500\/50,
+[data-theme='leica'] .ds-workbench-shell .border-blue-400\/50,
+[data-theme='leica'] .ds-workbench-shell .border-blue-800\/50 {
+  border-color: rgba(245, 158, 11, 0.55) !important;
+}
+[data-theme='leica'] .ds-workbench-shell .text-blue-400,
+[data-theme='leica'] .ds-workbench-shell .text-blue-300,
+[data-theme='leica'] .ds-workbench-shell .text-blue-200 {
+  color: #fbbf24 !important;
+}
+[data-theme='leica'] .ds-workbench-shell .bg-blue-500,
+[data-theme='leica'] .ds-workbench-shell .bg-blue-400 {
+  background-color: #f59e0b !important;
+}
+
+/* 自定义极简滚动条（随主题变色） */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0d111a;
+  background: var(--scroll-track);
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e2638;
+  background: var(--scroll-thumb);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: var(--accent);
 }
 
 /* ======================================================
@@ -53,7 +363,6 @@ body {
   }
 }
 
-/* 所有页面常规按钮与可点击光学表面自动接入聚光灯 + 斜向扫光 + 优雅阴影 */
 button:not([data-fx='off']),
 [data-fx-surface]:not([data-fx='off']) {
   position: relative;
@@ -66,7 +375,7 @@ button:not([data-fx='off']),
     color 0.2s ease;
 }
 
-/* 光标跟随径向聚光灯 */
+/* 光标跟随径向聚光灯（自动跟随当前主题主色） */
 button:not([data-fx='off']):not(:disabled)::before,
 [data-fx-surface]:not([data-fx='off'])::before {
   content: '';
@@ -78,7 +387,7 @@ button:not([data-fx='off']):not(:disabled)::before,
   transition: opacity 0.26s ease;
   background: radial-gradient(
     130px circle at var(--mx, 50%) var(--my, 50%),
-    rgba(96, 165, 250, 0.22),
+    rgba(var(--spotlight-rgb), 0.22),
     transparent 68%
   );
 }
@@ -88,11 +397,10 @@ button:not([data-fx='off']):not(:disabled):hover::before,
   opacity: 1;
 }
 
-/* 旗舰主按钮更明亮的镜面聚光 */
 .optical-fx-primary:not(:disabled)::before {
   background: radial-gradient(
     155px circle at var(--mx, 50%) var(--my, 50%),
-    rgba(255, 255, 255, 0.28),
+    rgba(255, 255, 255, 0.3),
     transparent 68%
   );
 }
@@ -111,7 +419,7 @@ button:not([data-fx='off']):not([data-fx-sheen='off']):not(:disabled)::after,
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.14),
+    rgba(255, 255, 255, var(--sheen-alpha)),
     transparent
   );
   transform: translateX(-145%) skewX(-24deg);
@@ -121,7 +429,7 @@ button:not([data-fx='off']):not([data-fx-sheen='off']):not(:disabled)::after,
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.3),
+    rgba(255, 255, 255, 0.32),
     transparent
   );
 }
@@ -131,7 +439,7 @@ button:not([data-fx='off']):not([data-fx-sheen='off']):not(:disabled):hover::aft
   animation: optical-sheen-sweep 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-/* 点击光圈扩散波纹（由 global opticalFx 注入） */
+/* 点击光圈扩散波纹 */
 .optical-btn-ripple {
   position: absolute;
   border-radius: 9999px;
@@ -139,14 +447,14 @@ button:not([data-fx='off']):not([data-fx-sheen='off']):not(:disabled):hover::aft
   background: radial-gradient(
     circle,
     rgba(255, 255, 255, 0.45) 0%,
-    rgba(59, 130, 246, 0.16) 54%,
+    rgba(var(--spotlight-rgb), 0.18) 54%,
     transparent 74%
   );
   animation: optical-ripple-expand 0.56s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   z-index: 1;
 }
 
-/* 顶部导航悬停激光下划线（禁用斜向扫光，保持导航纯粹精致） */
+/* 顶部导航悬停激光下划线 */
 .hero-nav-link::after {
   width: auto !important;
   height: 1.5px !important;

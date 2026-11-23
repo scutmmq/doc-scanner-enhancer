@@ -249,8 +249,8 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
         </div>
       </div>
 
-      {/* 图像渲染核心暗房区域 */}
-      <div className="flex-1 relative overflow-hidden flex items-center justify-center p-3 bg-[#080b11] select-none">
+      {/* 图像渲染核心暗房标定光学台面（点阵刻度 + 顶灯微聚光） */}
+      <div className="ds-optical-stage flex-1 relative overflow-hidden flex items-center justify-center p-4 select-none">
         {/* 算法实时运算 SSE 进度条反馈 */}
         {isProcessing && (
           <div className="absolute inset-0 bg-slate-950/65 backdrop-blur-[2px] z-30 flex flex-col items-center justify-center p-4">
@@ -374,7 +374,7 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
           /* 双联并排同步对比视窗 */
           <div className="grid grid-cols-2 gap-3 w-full h-full">
             <div className="flex flex-col items-center justify-center h-full bg-[#0c1018] rounded-lg border border-slate-800/80 p-2 relative overflow-hidden">
-              <span className="absolute top-2.5 left-2.5 px-2 py-0.5 bg-black/75 backdrop-blur rounded text-[11px] text-slate-300 font-mono z-10 border border-slate-700">
+              <span className="ds-keep-white absolute top-2.5 left-2.5 px-2 py-0.5 bg-black/75 backdrop-blur rounded text-[11px] text-white font-mono z-10 border border-slate-700">
                 原始退化图 (Before)
               </span>
               <img
@@ -433,7 +433,7 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
             ref={sliderFrameRef}
             onMouseDown={!isDiagnosticView ? handleSliderMouseDown : undefined}
             onTouchStart={!isDiagnosticView ? () => { isDraggingSlider.current = true; } : undefined}
-            className={`relative inline-flex items-center justify-center max-h-full max-w-full overflow-hidden rounded border border-slate-800/80 ${
+            className={`relative inline-flex items-center justify-center h-full max-h-full max-w-full overflow-hidden rounded-lg border border-slate-700/60 shadow-[var(--doc-shadow)] ${
               isDiagnosticView ? 'cursor-default' : 'cursor-ew-resize'
             }`}
             style={{ transform: `scale(${zoom})`, transition: 'transform 0.15s ease-out' }}
@@ -446,7 +446,7 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
                 const img = e.currentTarget;
                 if (img.naturalWidth) setProcSize({ w: img.naturalWidth, h: img.naturalHeight });
               }}
-              className="max-h-[68vh] max-w-full object-contain pointer-events-none block select-none"
+              className="h-full max-h-full w-auto max-w-full object-contain pointer-events-none block select-none"
             />
 
             {/* OCR 检测框叠加层 */}
@@ -488,7 +488,7 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
                   }}
                   className="w-full h-full object-contain pointer-events-none block select-none"
                 />
-                <span className="absolute bottom-3 left-3 px-2.5 py-1 bg-black/80 backdrop-blur rounded text-[11px] text-slate-200 font-mono border border-slate-700">
+                <span className="ds-keep-white absolute bottom-3 left-3 px-2.5 py-1 bg-black/80 backdrop-blur rounded text-[11px] text-white font-mono border border-slate-700">
                   修复前 (Before)
                 </span>
               </div>

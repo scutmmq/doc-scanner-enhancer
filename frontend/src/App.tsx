@@ -16,6 +16,7 @@ import {
   Play,
   Camera,
   Wand2,
+  Palette,
 } from 'lucide-react';
 import { DarkroomViewer } from './components/DarkroomViewer';
 import {
@@ -40,6 +41,30 @@ interface SampleMeta {
   recommended_preset: string;
   recommended_params: Partial<PipelineParams>;
   thumbnail_base64: string;
+}
+
+type StudioTheme = 'darkroom' | 'paper' | 'leica';
+
+const STUDIO_THEMES: Array<{
+  id: StudioTheme;
+  label: string;
+  desc: string;
+  swatches: [string, string];
+}> = [
+  { id: 'darkroom', label: '暗房光学', desc: '深邃玄黑 · 工程钴蓝', swatches: ['#0b101b', '#3b82f6'] },
+  { id: 'paper', label: '宣纸晴空', desc: '暖白极简 · 日间编辑台', swatches: ['#f6f4ee', '#1d4ed8'] },
+  { id: 'leica', label: '徕卡暖金', desc: '暖石墨黑 · 阳极氧化黄铜', swatches: ['#1a1714', '#f59e0b'] },
+];
+
+function getInitialTheme(): StudioTheme {
+  if (typeof window === 'undefined') return 'darkroom';
+  try {
+    const saved = window.localStorage.getItem('docscanner_theme');
+    if (saved === 'paper' || saved === 'leica' || saved === 'darkroom') return saved;
+  } catch {
+    // ignore storage errors
+  }
+  return 'darkroom';
 }
 
 function getInitialCaptureSession(): string | null {
@@ -69,6 +94,8 @@ export default function App() {
 
   // 工作台双模式：默认 'simple' (极简智能模式，新手零负担)，可一键切至 'expert' (专业视图，完整 7 阶段与调参)
   const [workspaceMode, setWorkspaceMode] = useState<'simple' | 'expert'>('simple');
+  const [uiTheme, setUiTheme] = useState<StudioTheme>(getInitialTheme);
+  const [showThemeMenu, setShowThemeMenu] = useState<boolean>(false);
 
   const [samples, setSamples] = useState<SampleMeta[]>([]);
   const [activeSampleName, setActiveSampleName] = useState<string | null>(null);
@@ -102,6 +129,17 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mobileCameraRef = useRef<HTMLInputElement>(null);
   const sampleMenuRef = useRef<HTMLDivElement>(null);
+  const themeMenuRef = useRef<HTMLDivElement>(null);
+
+  // 同步当前主题至 HTML 根元素并持久化
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', uiTheme);
+    try {
+      window.localStorage.setItem('docscanner_theme', uiTheme);
+    } catch {
+      // ignore storage restrictions
+    }
+  }, [uiTheme]);
 
   const dismissHero = useCallback(() => {
     setShowHero(false);
@@ -130,11 +168,14 @@ export default function App() {
     fetchSamples();
   }, [captureSessionId]);
 
-  // 点击外部关闭示例下拉菜单
+  // 点击外部关闭示例与主题下拉菜单
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (sampleMenuRef.current && !sampleMenuRef.current.contains(e.target as Node)) {
         setShowSampleMenu(false);
+      }
+      if (themeMenuRef.current && !themeMenuRef.current.contains(e.target as Node)) {
+        setShowThemeMenu(false);
       }
     };
     window.addEventListener('mousedown', handleClickOutside);
@@ -523,12 +564,14 @@ export default function App() {
     link.click();
   };
 
+  const currentThemeMeta = STUDIO_THEMES.find((t) => t.id === uiTheme) || STUDIO_THEMES[0];
+
   return (
     <div
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className="flex flex-col min-h-screen lg:h-screen w-screen bg-[#070a10] text-slate-100 font-sans lg:overflow-hidden relative"
+      className="ds-workbench-shell flex flex-col min-h-screen lg:h-screen w-screen bg-[#070a10] text-slate-100 font-sans lg:overflow-hidden relative"
     >
       {/* 首次进入全屏光学暗房开屏引导（随时可在顶栏点击「重温开屏」重播） */}
       {showHero && (
@@ -588,18 +631,18 @@ export default function App() {
             <div>
               <div className="flex items-center space-x-2">
                 <span className="font-bold text-sm tracking-wide text-white">DocScanner</span>
-                <span className="text-[11px] text-slate-400 hidden sm:inline">
+                <span className="text-[11px] text-slate-400 hidden 2xl:inline">
                   智能文档扫描工作台
                 </span>
               </div>
-              <div className="text-[10px] text-slate-500 hidden xl:block">
+              <div className="text-[10px] text-slate-500 hidden 2xl:block">
                 自动诊断 · 去阴影 · 消摩尔纹 · 红章保真 · 失焦复原 · 文字提取
               </div>
             </div>
           </button>
 
           {rawImageBase64 && (
-            <div className="hidden xl:flex items-center space-x-2 pl-3 border-l border-slate-800 text-xs">
+            <div className="hidden 2xl:flex items-center space-x-2 pl-3 border-l border-slate-800 text-xs">
               <span className="text-slate-500">当前文档:</span>
               <span className="font-mono text-slate-200 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 max-w-[180px] truncate">
                 {activeSampleTitle}
@@ -641,6 +684,75 @@ export default function App() {
               <Sliders className="w-3.5 h-3.5 mr-1" />
               <span>专业视图</span>
             </button>
+          </div>
+
+          {/* 主题外观一键切换（暗房光学 / 宣纸晴空 / 徕卡暖金） */}
+          <div ref={themeMenuRef} className="relative">
+            <button
+              onClick={() => setShowThemeMenu((v) => !v)}
+              data-fx-magnet="subtle"
+              className="flex items-center px-2.5 py-1.5 rounded-lg bg-[#121826] hover:bg-[#192338] text-slate-200 border border-slate-800 text-xs transition-colors"
+              title="切换工作台视觉主题风格"
+            >
+              <span className="flex items-center -space-x-1 mr-1.5">
+                <span
+                  className="w-2.5 h-2.5 rounded-full border border-white/30"
+                  style={{ backgroundColor: currentThemeMeta.swatches[0] }}
+                />
+                <span
+                  className="w-2.5 h-2.5 rounded-full border border-white/30"
+                  style={{ backgroundColor: currentThemeMeta.swatches[1] }}
+                />
+              </span>
+              <span className="hidden sm:inline">{currentThemeMeta.label}</span>
+              <Palette className="w-3.5 h-3.5 sm:hidden" />
+              <ChevronDown className="w-3 h-3 ml-1 text-slate-400" />
+            </button>
+
+            {showThemeMenu && (
+              <div className="absolute right-0 mt-1.5 w-56 bg-[#111726] border border-slate-700/90 rounded-xl shadow-2xl p-1.5 z-50 space-y-1">
+                <div className="px-2 py-1 text-[10px] font-mono text-slate-400 border-b border-slate-800">
+                  切换工作台风格主题
+                </div>
+                {STUDIO_THEMES.map((t) => {
+                  const active = uiTheme === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        setUiTheme(t.id);
+                        setShowThemeMenu(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-left transition-colors ${
+                        active
+                          ? 'bg-blue-600/20 border border-blue-500/50 text-white'
+                          : 'hover:bg-slate-800/70 text-slate-200 border border-transparent'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <span className="flex items-center -space-x-1 flex-shrink-0">
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-slate-500/40 shadow-sm"
+                            style={{ backgroundColor: t.swatches[0] }}
+                          />
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-slate-500/40 shadow-sm"
+                            style={{ backgroundColor: t.swatches[1] }}
+                          />
+                        </span>
+                        <div>
+                          <div className="text-xs font-semibold leading-tight">{t.label}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">{t.desc}</div>
+                        </div>
+                      </div>
+                      {active && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* 手机扫码无线拍传 */}
@@ -771,7 +883,7 @@ export default function App() {
           状态 A：未导入图片时的工作台欢迎与上手引导页
       ==================================================================== */}
       {!rawImageBase64 ? (
-        <div className="flex-1 overflow-y-auto p-5 sm:p-6 flex flex-col items-center justify-center">
+        <div className="ds-optical-stage flex-1 overflow-y-auto p-5 sm:p-6 flex flex-col items-center justify-center">
           <div className="max-w-4xl w-full space-y-6">
             {/* 核心上传与拖拽卡片 */}
             <div
