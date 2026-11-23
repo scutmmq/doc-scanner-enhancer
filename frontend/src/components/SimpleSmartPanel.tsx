@@ -168,7 +168,7 @@ export const SimpleSmartPanel: React.FC<SimpleSmartPanelProps> = ({
             magnetic="subtle"
             onClick={onAutoOptimize}
             disabled={isProcessing}
-            className="w-full min-h-[42px] rounded-xl text-xs font-semibold"
+            className="w-full min-h-[44px] rounded-xl text-xs font-semibold"
           >
             <Wand2 className="w-3.5 h-3.5 mr-1.5 transition-transform duration-300 group-hover:rotate-12" />
             <span>一键按诊断结论自动优化</span>
@@ -302,7 +302,7 @@ export const SimpleSmartPanel: React.FC<SimpleSmartPanelProps> = ({
             magnetic="subtle"
             onClick={handleCopyText}
             disabled={!ocrText?.trim()}
-            className="min-h-[42px] px-3 rounded-xl text-xs font-medium"
+            className="min-h-[44px] px-3 rounded-xl text-xs font-medium"
           >
             {copied ? (
               <>
@@ -322,7 +322,7 @@ export const SimpleSmartPanel: React.FC<SimpleSmartPanelProps> = ({
             magnetic="subtle"
             onClick={onDownload}
             disabled={isProcessing}
-            className="min-h-[42px] px-3 rounded-xl text-xs font-semibold"
+            className="min-h-[44px] px-3 rounded-xl text-xs font-semibold"
           >
             <Download className="w-3.5 h-3.5 mr-1.5" />
             <span>下载扫描件</span>
@@ -332,7 +332,7 @@ export const SimpleSmartPanel: React.FC<SimpleSmartPanelProps> = ({
         <button
           onClick={onSwitchToExpert}
           data-fx-magnet="subtle"
-          className="w-full min-h-[36px] px-3 rounded-lg border border-slate-800/90 hover:border-blue-500/40 bg-[#0b101b] hover:bg-[#161f33] text-[11px] text-slate-400 hover:text-slate-200 flex items-center justify-center transition-colors"
+          className="w-full min-h-[40px] px-3 rounded-lg border border-slate-800/90 hover:border-blue-500/40 bg-[#0b101b] hover:bg-[#161f33] text-[11px] text-slate-400 hover:text-slate-200 flex items-center justify-center transition-colors"
         >
           <Sliders className="w-3.5 h-3.5 mr-1.5 text-blue-400 flex-shrink-0" />
           <span className="truncate">切换至专业视图 · 微调 7 阶段算子与频谱</span>

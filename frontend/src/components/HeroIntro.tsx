@@ -4,6 +4,7 @@ import { useGSAP } from '@gsap/react';
 import {
   ArrowRight,
   QrCode,
+  Camera,
   Sun,
   Waves,
   Stamp,
@@ -18,6 +19,7 @@ gsap.registerPlugin(useGSAP);
 interface HeroIntroProps {
   onEnterWorkbench: () => void;
   onOpenPhoneRelay: () => void;
+  onDirectCamera?: () => void;
 }
 
 type OpticalModeId = 'shadow' | 'moire' | 'stamp' | 'blur';
@@ -78,6 +80,7 @@ const OPTICAL_MODES: Array<{
 export const HeroIntro: React.FC<HeroIntroProps> = ({
   onEnterWorkbench,
   onOpenPhoneRelay,
+  onDirectCamera,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -488,7 +491,7 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
       onPointerLeave={() => {
         pointerNormXRef.current = null;
       }}
-      className="fixed inset-0 z-50 w-screen h-screen overflow-hidden bg-[#030408] text-white select-none"
+      className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden bg-[#030408] text-white select-none"
     >
       {/* ================================================================
           背景层：100% 全屏铺满视频 (frontend/public/hero-intro.mp4) 或全屏棚拍光学 Canvas
@@ -565,7 +568,7 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
               variant="pill"
               magnetic="subtle"
               onClick={() => handleAnimatedExit(onEnterWorkbench)}
-              className="min-h-[40px] px-5 rounded-full text-xs font-semibold tracking-wide"
+              className="min-h-[44px] px-5 rounded-full text-xs font-semibold tracking-wide"
             >
               <span>进入工作台</span>
               <ArrowRight className="w-3.5 h-3.5 ml-1.5 transition-transform duration-300 group-hover:translate-x-1" />
@@ -605,14 +608,25 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
                 <ArrowRight className="w-4 h-4 ml-2 transition-transform duration-300 group-hover:translate-x-1.5" />
               </OpticalButton>
 
+              {/* 桌面端显示「手机扫码无线拍传」；移动端自适应为「直接拍照扫描」 */}
               <OpticalButton
                 variant="glass"
                 magnetic="strong"
                 onClick={() => handleAnimatedExit(onOpenPhoneRelay)}
-                className="min-h-[52px] px-7 rounded-full text-sm font-medium tracking-wide"
+                className="hidden sm:inline-flex min-h-[52px] px-7 rounded-full text-sm font-medium tracking-wide"
               >
                 <QrCode className="w-4 h-4 mr-2 text-amber-400 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110" />
                 <span>手机扫码无线拍传</span>
+              </OpticalButton>
+
+              <OpticalButton
+                variant="glass"
+                magnetic="strong"
+                onClick={() => handleAnimatedExit(onDirectCamera || onEnterWorkbench)}
+                className="sm:hidden inline-flex min-h-[52px] px-7 rounded-full text-sm font-medium tracking-wide"
+              >
+                <Camera className="w-4 h-4 mr-2 text-emerald-400" />
+                <span>直接拍照扫描</span>
               </OpticalButton>
             </div>
           </div>
@@ -631,7 +645,7 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
                   data-fx-magnet="subtle"
                   onMouseEnter={() => setActiveMode(m.id)}
                   onClick={() => setActiveMode(m.id)}
-                  className={`min-h-[42px] px-3.5 rounded-xl text-xs flex items-center space-x-2 transition-all duration-300 ${
+                  className={`min-h-[44px] px-3.5 rounded-xl text-xs flex items-center space-x-2 transition-all duration-300 ${
                     isActive
                       ? 'bg-white/15 text-white border border-white/25 shadow-lg'
                       : 'text-slate-300/80 hover:text-white border border-transparent hover:bg-white/[0.06]'

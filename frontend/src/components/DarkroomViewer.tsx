@@ -119,23 +119,44 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
     [draggingCornerIdx, origSize.w, origSize.h]
   );
 
-  const handleTouchMove = useCallback((e: TouchEvent) => {
-    if (!isDraggingSlider.current || !sliderFrameRef.current || e.touches.length === 0) return;
-    const rect = sliderFrameRef.current.getBoundingClientRect();
-    const x = e.touches[0].clientX - rect.left;
-    const pos = Math.max(0, Math.min(100, (x / rect.width) * 100));
-    setSliderPos(pos);
-  }, []);
+  const handleTouchMove = useCallback(
+    (e: TouchEvent) => {
+      if (e.touches.length === 0) return;
+      const touch = e.touches[0];
+      if (isDraggingSlider.current && sliderFrameRef.current) {
+        e.preventDefault();
+        const rect = sliderFrameRef.current.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const pos = Math.max(0, Math.min(100, (x / rect.width) * 100));
+        setSliderPos(pos);
+      } else if (draggingCornerIdx !== null && cornerSvgRef.current) {
+        e.preventDefault();
+        const rect = cornerSvgRef.current.getBoundingClientRect();
+        const relX = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+        const relY = Math.max(0, Math.min(1, (touch.clientY - rect.top) / rect.height));
+        const px = Math.round(relX * origSize.w);
+        const py = Math.round(relY * origSize.h);
+        setCorners((prev) => {
+          const next = [...prev];
+          next[draggingCornerIdx] = [px, py];
+          return next;
+        });
+      }
+    },
+    [draggingCornerIdx, origSize.w, origSize.h]
+  );
 
   useEffect(() => {
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('touchend', handleMouseUp);
-    window.addEventListener('touchmove', handleTouchMove);
+    window.addEventListener('touchcancel', handleMouseUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
     return () => {
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('touchend', handleMouseUp);
+      window.removeEventListener('touchcancel', handleMouseUp);
       window.removeEventListener('touchmove', handleTouchMove);
     };
   }, [handleMouseUp, handleMouseMove, handleTouchMove]);
@@ -144,93 +165,93 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-[#0d121d] rounded-xl border border-slate-800 overflow-hidden shadow-2xl relative">
-      {/* 顶部状态与工具栏 */}
-      <div className="flex items-center justify-between px-4 py-2 bg-[#121826] border-b border-slate-800 text-xs font-mono select-none flex-wrap gap-2">
-        <div className="flex items-center space-x-3">
-          <span className="flex items-center text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-blue-500 mr-2 animate-pulse"></span>
-            当前检视: <span className="text-slate-100 ml-1.5 font-semibold">{stageName}</span>
+      {/* 顶部状态与工具栏（移动端单行横向可滑胶囊，杜绝竖排换行） */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-3 sm:px-4 py-2 bg-[#121826] border-b border-slate-800 text-xs font-mono select-none gap-2">
+        <div className="flex items-center space-x-2.5 min-w-0">
+          <span className="flex items-center text-slate-400 truncate">
+            <span className="w-2 h-2 rounded-full bg-blue-500 mr-2 animate-pulse flex-shrink-0"></span>
+            当前检视: <span className="text-slate-100 ml-1.5 font-semibold truncate">{stageName}</span>
           </span>
           {origSize.w > 0 && (
-            <span className="text-[10px] text-slate-500 hidden md:inline tabular-nums">
+            <span className="text-[10px] text-slate-500 hidden md:inline tabular-nums flex-shrink-0">
               [{procSize.w}×{procSize.h} px]
             </span>
           )}
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 overflow-x-auto pb-0.5 sm:pb-0 flex-nowrap">
           {/* OCR 识别框叠加开关 */}
           {ocrBoxes && ocrBoxes.length > 0 && viewMode !== 'corner-edit' && (
             <button
               onClick={() => setShowOcrOverlay((v) => !v)}
               data-fx-magnet="subtle"
-              className={`px-2.5 py-1 rounded text-[11px] font-mono border transition-colors flex items-center ${
+              className={`min-h-[34px] px-2.5 py-1 rounded-lg text-[11px] font-mono border whitespace-nowrap flex-shrink-0 transition-colors flex items-center ${
                 showOcrOverlay
                   ? 'bg-emerald-600/20 border-emerald-500/60 text-emerald-300 font-semibold'
                   : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
               }`}
               title="在增强图像上叠加显示 RapidOCR 文本框与置信度"
             >
-              <ScanText className="w-3.5 h-3.5 mr-1" />
-              OCR 识别框 ({ocrBoxes.length})
+              <ScanText className="w-3.5 h-3.5 mr-1 flex-shrink-0" />
+              <span>OCR 识别框 ({ocrBoxes.length})</span>
             </button>
           )}
 
           {/* 视窗模式切换 */}
-          <div className="flex bg-slate-900 rounded p-0.5 border border-slate-800">
+          <div className="flex bg-slate-900 rounded-lg p-0.5 border border-slate-800 flex-shrink-0">
             <button
               onClick={() => setViewMode('slider')}
-              className={`px-2.5 py-1 rounded text-[11px] transition-colors flex items-center ${
+              className={`min-h-[32px] px-2.5 py-1 rounded-md text-[11px] whitespace-nowrap flex-shrink-0 transition-colors flex items-center ${
                 viewMode === 'slider'
                   ? 'bg-blue-600 text-white font-medium'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Eye className="w-3.5 h-3.5 mr-1" /> 滑块对比
+              <Eye className="w-3.5 h-3.5 mr-1 flex-shrink-0" /> 滑块对比
             </button>
             <button
               onClick={() => setViewMode('side-by-side')}
-              className={`px-2.5 py-1 rounded text-[11px] transition-colors flex items-center ${
+              className={`min-h-[32px] px-2.5 py-1 rounded-md text-[11px] whitespace-nowrap flex-shrink-0 transition-colors flex items-center ${
                 viewMode === 'side-by-side'
                   ? 'bg-blue-600 text-white font-medium'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Columns className="w-3.5 h-3.5 mr-1" /> 双联并排
+              <Columns className="w-3.5 h-3.5 mr-1 flex-shrink-0" /> 双联对比
             </button>
             {onApplyManualCorners && originalImage && (
               <button
                 onClick={() => setViewMode(viewMode === 'corner-edit' ? 'slider' : 'corner-edit')}
-                className={`px-2.5 py-1 rounded text-[11px] transition-colors flex items-center ${
+                className={`min-h-[32px] px-2.5 py-1 rounded-md text-[11px] whitespace-nowrap flex-shrink-0 transition-colors flex items-center ${
                   viewMode === 'corner-edit'
                     ? 'bg-amber-600 text-white font-medium'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
                 title="手动拖拽 4 个透视控制角点进行单应性矫正"
               >
-                <Crop className="w-3.5 h-3.5 mr-1" /> 四角点校准
+                <Crop className="w-3.5 h-3.5 mr-1 flex-shrink-0" /> 四角点校准
               </button>
             )}
           </div>
 
           {/* 缩放控制 */}
-          <div className="flex items-center bg-slate-900 rounded border border-slate-800 px-1 tabular-nums">
+          <div className="flex items-center bg-slate-900 rounded-lg border border-slate-800 px-1 tabular-nums flex-shrink-0">
             <button
               onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
               data-fx-sheen="off"
-              className="p-1 text-slate-400 hover:text-white rounded"
+              className="min-w-[30px] min-h-[32px] flex items-center justify-center text-slate-400 hover:text-white rounded"
               title="缩小"
               aria-label="缩小图像"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="px-1 text-[11px] text-slate-300 min-w-[40px] text-center">
+            <span className="px-1 text-[11px] text-slate-300 min-w-[38px] text-center">
               {Math.round(zoom * 100)}%
             </span>
             <button
               onClick={() => setZoom((z) => Math.min(3.0, z + 0.25))}
               data-fx-sheen="off"
-              className="p-1 text-slate-400 hover:text-white rounded"
+              className="min-w-[30px] min-h-[32px] flex items-center justify-center text-slate-400 hover:text-white rounded"
               title="放大"
               aria-label="放大图像"
             >
@@ -239,7 +260,7 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
             <button
               onClick={() => setZoom(1)}
               data-fx-sheen="off"
-              className="p-1 text-slate-500 hover:text-slate-300 ml-0.5 border-l border-slate-800 rounded"
+              className="min-w-[28px] min-h-[32px] flex items-center justify-center text-slate-500 hover:text-slate-300 ml-0.5 border-l border-slate-800 rounded"
               title="重置缩放"
               aria-label="重置缩放"
             >
@@ -329,7 +350,7 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
               <svg
                 ref={cornerSvgRef}
                 viewBox={`0 0 ${origSize.w} ${origSize.h}`}
-                className="absolute inset-0 w-full h-full"
+                className="absolute inset-0 w-full h-full touch-none"
               >
                 <polygon
                   points={corners.map((p) => `${p[0]},${p[1]}`).join(' ')}
@@ -345,8 +366,19 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
                       e.stopPropagation();
                       setDraggingCornerIdx(idx);
                     }}
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                      setDraggingCornerIdx(idx);
+                    }}
                     className="cursor-move"
                   >
+                    {/* 移动端大范围透明触控热区圆 */}
+                    <circle
+                      cx={pt[0]}
+                      cy={pt[1]}
+                      r={Math.max(26, Math.round(origSize.w * 0.042))}
+                      fill="transparent"
+                    />
                     <circle
                       cx={pt[0]}
                       cy={pt[1]}
@@ -371,8 +403,8 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
             </div>
           </div>
         ) : viewMode === 'side-by-side' ? (
-          /* 双联并排同步对比视窗 */
-          <div className="grid grid-cols-2 gap-3 w-full h-full">
+          /* 双联对比视窗（桌面左右并排，移动端自动改为上下堆叠更清晰） */
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full h-full overflow-y-auto sm:overflow-hidden">
             <div className="flex flex-col items-center justify-center h-full bg-[#0c1018] rounded-lg border border-slate-800/80 p-2 relative overflow-hidden">
               <span className="ds-keep-white absolute top-2.5 left-2.5 px-2 py-0.5 bg-black/75 backdrop-blur rounded text-[11px] text-white font-mono z-10 border border-slate-700">
                 原始退化图 (Before)
@@ -434,7 +466,7 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
             onMouseDown={!isDiagnosticView ? handleSliderMouseDown : undefined}
             onTouchStart={!isDiagnosticView ? () => { isDraggingSlider.current = true; } : undefined}
             className={`relative inline-flex items-center justify-center h-full max-h-full max-w-full overflow-hidden rounded-lg border border-slate-700/60 shadow-[var(--doc-shadow)] ${
-              isDiagnosticView ? 'cursor-default' : 'cursor-ew-resize'
+              isDiagnosticView ? 'cursor-default' : 'cursor-ew-resize touch-none'
             }`}
             style={{ transform: `scale(${zoom})`, transition: 'transform 0.15s ease-out' }}
           >
@@ -494,17 +526,17 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
               </div>
             )}
 
-            {/* 分割线与 44x44px 触控手柄 */}
+            {/* 分割线与 44x44px 正圆触控手柄（flex-shrink-0 严防窄屏压扁） */}
             {processedImage && !isDiagnosticView && (
               <div
-                className="absolute top-0 bottom-0 w-0.5 bg-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.9)] z-20 flex items-center justify-center cursor-ew-resize"
+                className="absolute top-0 bottom-0 w-0.5 bg-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.9)] z-20 flex items-center justify-center cursor-ew-resize pointer-events-none"
                 style={{ left: `${sliderPos}%` }}
               >
                 <button
                   type="button"
                   data-fx="off"
                   aria-label="左右拖动对比增强前后图像"
-                  className="w-11 h-11 -ml-[22px] rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center text-white text-xs font-bold select-none cursor-grab active:cursor-grabbing hover:scale-110 transition-transform"
+                  className="pointer-events-auto flex-shrink-0 w-11 h-11 min-w-[44px] min-h-[44px] rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center text-white text-sm font-bold select-none cursor-grab active:cursor-grabbing hover:scale-110 transition-transform"
                 >
                   ⇄
                 </button>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Sliders,
   RefreshCw,
@@ -9,7 +9,9 @@ import {
   Focus,
   Type,
   Palette,
-  RotateCcw
+  RotateCcw,
+  CheckCircle2,
+  Info,
 } from 'lucide-react';
 import { OpticalButton } from './OpticalButton';
 
@@ -85,16 +87,20 @@ interface ParameterPanelProps {
   isProcessing: boolean;
 }
 
+type ModuleGroupId = 'output' | 's1' | 's2' | 's3' | 's4' | 's5' | 's6';
+
 const SCENE_PRESETS: Array<{
   id: string;
   label: string;
   desc: string;
+  summary: string;
   patch: Partial<PipelineParams>;
 }> = [
   {
     id: 'shadow',
     label: '强力去阴影',
     desc: '针对侧光与手部遮挡阴影，执行形态学背景估计与 Retinex 归一化',
+    summary: '开启阴影背景消除 + 净白拉伸均衡 + Sauvola 黑白扫描；关闭透视/摩尔纹/去模糊',
     patch: {
       output_mode: 'binary',
       enable_geometric: false,
@@ -111,6 +117,7 @@ const SCENE_PRESETS: Array<{
     id: 'moire',
     label: '屏幕去摩尔纹',
     desc: '针对显示器翻拍，自动定位 2D-FFT 周期亮峰并陷波滤除',
+    summary: '开启 2D-FFT 频域陷波 (D0=14px) + 阴影光照校正；关闭透视与去模糊',
     patch: {
       output_mode: 'binary',
       enable_geometric: false,
@@ -127,6 +134,7 @@ const SCENE_PRESETS: Array<{
     id: 'defocus',
     label: '散焦去模糊',
     desc: '圆盘 PSF 点扩散建模 + 正则化维纳反卷积恢复失焦字迹',
+    summary: '开启维纳去模糊 (圆盘 PSF R=3, K=0.018) + 锐化 0.40；关闭频域与降噪',
     patch: {
       output_mode: 'binary',
       enable_geometric: false,
@@ -145,6 +153,7 @@ const SCENE_PRESETS: Array<{
     id: 'motion',
     label: '手抖去重影',
     desc: '线性运动 PSF 核 + 维纳逆滤波消除快门抖动拖尾',
+    summary: '开启维纳去模糊 (线性运动 L=9, θ=0°, K=0.016) + 锐化 0.40；关闭频域与降噪',
     patch: {
       output_mode: 'binary',
       enable_geometric: false,
@@ -164,6 +173,7 @@ const SCENE_PRESETS: Array<{
     id: 'denoise',
     label: '去偏色与降噪',
     desc: '纸白平衡校正 + 3×3 中值滤波消除椒盐与热噪点',
+    summary: '切换为原彩净底输出 + 开启纸白平衡 + 开启 3×3 中值滤波降噪',
     patch: {
       output_mode: 'color',
       enable_geometric: false,
@@ -180,6 +190,7 @@ const SCENE_PRESETS: Array<{
     id: 'complex',
     label: '全自动综合矫正',
     desc: '透视拉直 + 去阴影 + 2D-FFT 去网纹 + 自适应二值化',
+    summary: '联动开启 (1)透视拉直 + (2)白平衡 + (3)去阴影 + (4)2D-FFT陷波 (D0=12px) + (6)二值化',
     patch: {
       output_mode: 'binary',
       enable_geometric: true,
@@ -195,29 +206,156 @@ const SCENE_PRESETS: Array<{
   },
 ];
 
+function diffChangedModules(prev: PipelineParams, next: PipelineParams): Set<ModuleGroupId> {
+  const changed = new Set<ModuleGroupId>();
+  if (prev.output_mode !== next.output_mode) changed.add('output');
+  if (prev.enable_geometric !== next.enable_geometric) changed.add('s1');
+  if (prev.color_space !== next.color_space || prev.enable_white_balance !== next.enable_white_balance) {
+    changed.add('s2');
+  }
+  if (
+    prev.enable_illumination !== next.enable_illumination ||
+    prev.illumination_kernel_size !== next.illumination_kernel_size ||
+    prev.clahe_clip_limit !== next.clahe_clip_limit ||
+    prev.contrast_method !== next.contrast_method ||
+    prev.denoise_method !== next.denoise_method
+  ) {
+    changed.add('s3');
+  }
+  if (
+    prev.enable_frequency_filter !== next.enable_frequency_filter ||
+    prev.notch_radius !== next.notch_radius
+  ) {
+    changed.add('s4');
+  }
+  if (
+    prev.enable_restoration !== next.enable_restoration ||
+    prev.blur_type !== next.blur_type ||
+    prev.defocus_radius !== next.defocus_radius ||
+    prev.motion_length !== next.motion_length ||
+    prev.motion_angle !== next.motion_angle ||
+    prev.wiener_k !== next.wiener_k
+  ) {
+    changed.add('s5');
+  }
+  if (
+    prev.enable_binarization !== next.enable_binarization ||
+    prev.binarize_method !== next.binarize_method ||
+    prev.sauvola_k !== next.sauvola_k ||
+    prev.sharpen_strength !== next.sharpen_strength ||
+    prev.soft_blend !== next.soft_blend
+  ) {
+    changed.add('s6');
+  }
+  return changed;
+}
+
 export const ParameterPanel: React.FC<ParameterPanelProps> = ({
   params,
   onChange,
   onApply,
   isProcessing,
 }) => {
-  // 僅更新狀態（用於滑塊拖動過程中的流暢預覽）
+  const [presetNotice, setPresetNotice] = useState<{ title: string; summary: string } | null>(null);
+  const [highlightedModules, setHighlightedModules] = useState<Set<ModuleGroupId>>(new Set());
+  const flashTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+    };
+  }, []);
+
+  // 判断当前参数是否精确命中 6 个快捷预设之一；否则即为“自定义手动精调”
+  const matchedPresetId = useMemo(() => {
+    for (const preset of SCENE_PRESETS) {
+      const merged = { ...DEFAULT_PIPELINE_PARAMS, ...preset.patch };
+      const keysToCompare: Array<keyof PipelineParams> = [
+        'output_mode',
+        'enable_geometric',
+        'enable_white_balance',
+        'enable_illumination',
+        'illumination_kernel_size',
+        'contrast_method',
+        'denoise_method',
+        'enable_frequency_filter',
+        'notch_radius',
+        'enable_restoration',
+        'blur_type',
+        'defocus_radius',
+        'motion_length',
+        'motion_angle',
+        'wiener_k',
+        'enable_binarization',
+        'binarize_method',
+        'sauvola_k',
+        'sharpen_strength',
+        'soft_blend',
+      ];
+      const allEqual = keysToCompare.every((k) => {
+        const a = params[k];
+        const b = merged[k];
+        if (typeof a === 'number' && typeof b === 'number') {
+          return Math.abs(a - b) < 1e-4;
+        }
+        return a === b;
+      });
+      if (allEqual) return preset.id;
+    }
+    return null;
+  }, [params]);
+
+  const triggerModuleHighlight = (changed: Set<ModuleGroupId>, title: string, summary: string) => {
+    setHighlightedModules(changed);
+    setPresetNotice({ title, summary });
+    if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = window.setTimeout(() => {
+      setHighlightedModules(new Set());
+    }, 2200);
+  };
+
+  // 仅更新状态（用于滑块拖动过程中的流畅预览）
   const update = <K extends keyof PipelineParams>(key: K, val: PipelineParams[K]) => {
+    setPresetNotice(null);
     onChange({ ...params, [key]: val });
   };
 
-  // 更新狀態並立即觸發後端計算（用於開關、下拉選單與模式按鈕，點擊即生效）
+  // 更新状态并立即触发后端计算（只改当前这一项，不动其他手动配置）
   const updateAndApply = <K extends keyof PipelineParams>(key: K, val: PipelineParams[K]) => {
+    setPresetNotice(null);
     const next = { ...params, [key]: val };
     onChange(next);
     onApply(next);
   };
 
-  const applyPreset = (patch: Partial<PipelineParams>) => {
-    const merged: PipelineParams = { ...DEFAULT_PIPELINE_PARAMS, ...patch };
+  // 一键应用预设（会批量重置并联动覆盖下方对应参数，同时高亮闪现被修改的模块）
+  const applyPreset = (preset: (typeof SCENE_PRESETS)[number]) => {
+    const merged: PipelineParams = {
+      ...DEFAULT_PIPELINE_PARAMS,
+      ...preset.patch,
+      manual_corners: params.manual_corners ?? null,
+    };
+    const changed = diffChangedModules(params, merged);
     onChange(merged);
     onApply(merged);
+    triggerModuleHighlight(changed, `已应用「${preset.label}」一键配置`, preset.summary);
   };
+
+  const handleResetDefault = () => {
+    const changed = diffChangedModules(params, DEFAULT_PIPELINE_PARAMS);
+    onChange(DEFAULT_PIPELINE_PARAMS);
+    onApply(DEFAULT_PIPELINE_PARAMS);
+    triggerModuleHighlight(
+      changed,
+      '已恢复默认参数配置',
+      '所有 6 阶段开关、滤波核尺度与阈值系数均已重置回初始值'
+    );
+  };
+
+  const moduleRing = (id: ModuleGroupId) =>
+    highlightedModules.has(id)
+      ? 'ring-2 ring-blue-500/75 border-blue-500/80 shadow-[0_0_20px_-4px_var(--accent-glow)]'
+      : 'border-slate-800';
 
   return (
     <div className="flex flex-col h-full bg-[#0d121d] rounded-xl border border-slate-800 p-3.5 text-xs font-sans overflow-y-auto">
@@ -229,15 +367,12 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
         </div>
         <div className="flex items-center space-x-1.5">
           <button
-            onClick={() => {
-              onChange(DEFAULT_PIPELINE_PARAMS);
-              onApply(DEFAULT_PIPELINE_PARAMS);
-            }}
+            onClick={handleResetDefault}
             disabled={isProcessing}
             data-fx-magnet="subtle"
             title="恢复默认参数"
             aria-label="恢复默认参数"
-            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-700 transition-colors"
+            className="min-w-[34px] min-h-[34px] p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-700 flex items-center justify-center transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
@@ -246,7 +381,7 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
             magnetic="subtle"
             onClick={() => onApply()}
             disabled={isProcessing}
-            className="px-3 py-1.5 rounded-lg font-medium"
+            className="min-h-[34px] px-3 py-1.5 rounded-lg font-medium"
           >
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isProcessing ? 'animate-spin' : ''}`} />
             <span>刷新效果</span>
@@ -254,33 +389,66 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
         </div>
       </div>
 
-      {/* 场景预设一键切换 */}
-      <div className="bg-[#121826] p-2.5 rounded-lg border border-slate-800 mb-3">
-        <div className="flex items-center justify-between mb-2">
+      {/* 场景预设一键切换（带命中状态高亮 + 自定义状态徽标 + 联动变更提示） */}
+      <div className="bg-[#121826] p-2.5 rounded-lg border border-slate-800 mb-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] font-medium text-slate-300 flex items-center">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400 mr-1.5" />
-            快捷修复模式 (点击立即生效)
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 mr-1.5 flex-shrink-0" />
+            一键场景配置 (会覆盖下方参数)
+          </span>
+          <span
+            className={`text-[10px] font-mono px-1.5 py-0.5 rounded border whitespace-nowrap ${
+              matchedPresetId
+                ? 'bg-blue-600/15 border-blue-500/40 text-blue-300'
+                : 'bg-amber-500/10 border-amber-500/35 text-amber-300'
+            }`}
+          >
+            {matchedPresetId ? '预设模式' : '已手动自定义'}
           </span>
         </div>
+
         <div className="grid grid-cols-3 gap-1.5">
-          {SCENE_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              onClick={() => applyPreset(preset.patch)}
-              disabled={isProcessing}
-              data-fx-magnet="subtle"
-              title={preset.desc}
-              className="py-1.5 px-2 rounded-lg bg-slate-900/90 hover:bg-blue-600/20 hover:border-blue-500/50 border border-slate-800 text-[11px] font-mono text-slate-200 hover:text-blue-300 transition-all text-center truncate"
-            >
-              {preset.label}
-            </button>
-          ))}
+          {SCENE_PRESETS.map((preset) => {
+            const isMatched = matchedPresetId === preset.id;
+            return (
+              <button
+                key={preset.id}
+                onClick={() => applyPreset(preset)}
+                disabled={isProcessing}
+                data-fx-magnet="subtle"
+                title={preset.desc}
+                className={`min-h-[36px] py-1.5 px-2 rounded-lg border text-[11px] font-mono transition-all text-center truncate flex items-center justify-center ${
+                  isMatched
+                    ? 'optical-fx-primary bg-blue-600 text-white border-blue-400/60 font-semibold shadow-sm'
+                    : 'bg-slate-900/90 hover:bg-blue-600/15 hover:border-blue-500/50 border-slate-800 text-slate-200 hover:text-blue-300'
+                }`}
+              >
+                <span className="truncate">{preset.label}</span>
+              </button>
+            );
+          })}
         </div>
+
+        {presetNotice && (
+          <div className="rounded-lg bg-blue-500/10 border border-blue-500/30 px-2.5 py-2 text-[10px] leading-relaxed text-blue-200 flex items-start space-x-2">
+            <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <div className="font-semibold text-white">{presetNotice.title}</div>
+              <div className="opacity-85 mt-0.5">{presetNotice.summary}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 手动精细配置区说明条 */}
+      <div className="flex items-center space-x-1.5 text-[10px] text-slate-400 px-0.5 mb-2">
+        <Info className="w-3 h-3 text-slate-500 flex-shrink-0" />
+        <span>以下为增量手动精调：每次仅修改当前单项，松开滑块自动生效</span>
       </div>
 
       <div className="space-y-3">
         {/* 输出文档模式 */}
-        <div className="bg-[#121826] p-3 rounded-lg border border-slate-800">
+        <div className={`bg-[#121826] p-3 rounded-lg border transition-all ${moduleRing('output')}`}>
           <label className="block text-[11px] font-medium text-slate-300 mb-2">输出文档样式</label>
           <div className="grid grid-cols-2 gap-1.5">
             {([
@@ -294,9 +462,9 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                 onClick={() => updateAndApply('output_mode', mode.id)}
                 disabled={isProcessing}
                 data-fx-magnet="subtle"
-                className={`py-2 px-2 rounded-lg text-center font-mono text-[11px] transition-colors ${
+                className={`min-h-[38px] py-2 px-2 rounded-lg text-center font-mono text-[11px] transition-colors ${
                   params.output_mode === mode.id
-                    ? 'optical-fx-primary bg-blue-600 text-white font-bold shadow-[0_6px_18px_-4px_rgba(37,99,235,0.65)] border border-blue-400/50'
+                    ? 'optical-fx-primary bg-blue-600 text-white font-bold shadow-[0_6px_18px_-4px_var(--accent-glow)] border border-blue-400/50'
                     : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800 hover:border-blue-500/40'
                 }`}
               >
@@ -307,7 +475,7 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
         </div>
 
         {/* 阶段 1: 几何矫正 */}
-        <div className="bg-[#121826] p-3 rounded-lg border border-slate-800">
+        <div className={`bg-[#121826] p-3 rounded-lg border transition-all ${moduleRing('s1')}`}>
           <div className="flex items-center justify-between mb-1">
             <span className="flex items-center font-medium text-slate-200">
               <ShieldCheck className="w-3.5 h-3.5 text-indigo-400 mr-1.5" />
@@ -322,12 +490,12 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
             />
           </div>
           <p className="text-[11px] text-slate-400 leading-relaxed">
-            自动识别倾斜纸张四角并拉伸为正视图；也可点击主视窗右上角「四角点校准」手动微调。
+            拍正的文档建议关闭以保留完整白边；斜拍文档可开启或用主视窗「四角点校准」手拖。
           </p>
         </div>
 
         {/* 阶段 2: 色彩空间与白平衡 */}
-        <div className="bg-[#121826] p-3 rounded-lg border border-slate-800">
+        <div className={`bg-[#121826] p-3 rounded-lg border transition-all ${moduleRing('s2')}`}>
           <div className="flex items-center justify-between mb-2">
             <span className="flex items-center font-medium text-slate-200">
               <Palette className="w-3.5 h-3.5 text-pink-400 mr-1.5" />
@@ -341,26 +509,29 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                 aria-label="亮度分离色彩空间"
                 value={params.color_space}
                 onChange={(e) => updateAndApply('color_space', e.target.value as 'hsv' | 'ycbcr')}
-                className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 font-mono text-[11px]"
+                className="w-full min-h-[34px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 font-mono text-[11px]"
               >
                 <option value="hsv">HSV (提取 V 亮度)</option>
                 <option value="ycbcr">YCbCr (提取 Y 亮度)</option>
               </select>
             </div>
-            <label className="flex items-center justify-between bg-slate-900/80 px-2.5 py-1.5 rounded border border-slate-800 mt-4 cursor-pointer">
+            <label className="flex items-center justify-between bg-slate-900/80 px-2.5 min-h-[34px] rounded-lg border border-slate-800 mt-4 cursor-pointer">
               <span className="text-[11px] font-mono text-slate-300">自动纸白平衡</span>
               <input
                 type="checkbox"
                 checked={params.enable_white_balance}
                 onChange={(e) => updateAndApply('enable_white_balance', e.target.checked)}
-                className="accent-blue-600 rounded cursor-pointer"
+                className="accent-blue-600 rounded cursor-pointer w-4 h-4"
               />
             </label>
           </div>
+          <p className="text-[10px] text-slate-500 mt-1.5">
+            开启纸白平衡可纠正暖黄台灯/冷蓝灯光色偏，保留红章或原彩时建议保持开启。
+          </p>
         </div>
 
         {/* 阶段 3: 空间域去噪、光照校正与对比度 */}
-        <div className="bg-[#121826] p-3 rounded-lg border border-slate-800">
+        <div className={`bg-[#121826] p-3 rounded-lg border transition-all ${moduleRing('s3')}`}>
           <div className="flex items-center justify-between mb-2">
             <span className="flex items-center font-medium text-slate-200">
               <Sun className="w-3.5 h-3.5 text-amber-400 mr-1.5" />
@@ -375,7 +546,7 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
             />
           </div>
           {params.enable_illumination && (
-            <div className="space-y-2.5 mt-2 pt-2 border-t border-slate-800/80">
+            <div className="space-y-3 mt-2 pt-2 border-t border-slate-800/80">
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[10px] font-mono text-slate-400 mb-1">噪点平滑滤波</label>
@@ -383,7 +554,7 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                     aria-label="空间域平滑去噪算子"
                     value={params.denoise_method}
                     onChange={(e) => updateAndApply('denoise_method', e.target.value as any)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 font-mono text-[11px]"
+                    className="w-full min-h-[34px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 font-mono text-[11px]"
                   >
                     <option value="none">关闭 (保持锐利笔画)</option>
                     <option value="median">中值滤波 (去椒盐噪点)</option>
@@ -397,7 +568,7 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                     aria-label="对比度增强方式"
                     value={params.contrast_method}
                     onChange={(e) => updateAndApply('contrast_method', e.target.value as any)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 font-mono text-[11px]"
+                    className="w-full min-h-[34px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 font-mono text-[11px]"
                   >
                     <option value="stretch_clahe">净白拉伸 + 局部均衡 (推荐)</option>
                     <option value="stretch">纯分位数线性拉伸</option>
@@ -424,6 +595,10 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                   onTouchEnd={() => onApply()}
                   className="w-full accent-blue-600"
                 />
+                <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                  <span>← 跟紧小块锐利阴影</span>
+                  <span>保护粗大黑体标题不掏空 →</span>
+                </div>
               </div>
 
               <div>
@@ -443,13 +618,17 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                   onTouchEnd={() => onApply()}
                   className="w-full accent-blue-600"
                 />
+                <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                  <span>← 纸底更纯净少灰斑</span>
+                  <span>淡铅笔字更浓黑 →</span>
+                </div>
               </div>
             </div>
           )}
         </div>
 
         {/* 阶段 4: 频域滤波去网纹 */}
-        <div className="bg-[#121826] p-3 rounded-lg border border-slate-800">
+        <div className={`bg-[#121826] p-3 rounded-lg border transition-all ${moduleRing('s4')}`}>
           <div className="flex items-center justify-between mb-2">
             <span className="flex items-center font-medium text-slate-200">
               <Waves className="w-3.5 h-3.5 text-cyan-400 mr-1.5" />
@@ -481,12 +660,16 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                 onTouchEnd={() => onApply()}
                 className="w-full accent-blue-600"
               />
+              <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                <span>← 轻柔滤除、护细字</span>
+                <span>强力消除重网纹 →</span>
+              </div>
             </div>
           )}
         </div>
 
         {/* 阶段 5: 退化建模与维纳滤波 */}
-        <div className="bg-[#121826] p-3 rounded-lg border border-slate-800">
+        <div className={`bg-[#121826] p-3 rounded-lg border transition-all ${moduleRing('s5')}`}>
           <div className="flex items-center justify-between mb-2">
             <span className="flex items-center font-medium text-slate-200">
               <Focus className="w-3.5 h-3.5 text-purple-400 mr-1.5" />
@@ -500,6 +683,11 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
               className="accent-blue-600 rounded cursor-pointer w-4 h-4"
             />
           </div>
+          {!params.enable_restoration && (
+            <p className="text-[10px] text-slate-500">
+              清晰照片无需开启；仅在拍虚失焦或手抖重影时勾选。
+            </p>
+          )}
           {params.enable_restoration && (
             <div className="mt-2 pt-2 border-t border-slate-800/80 space-y-2.5">
               <div>
@@ -508,7 +696,7 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                   aria-label="模糊退化类型"
                   value={params.blur_type}
                   onChange={(e) => updateAndApply('blur_type', e.target.value as any)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 font-mono text-[11px]"
+                  className="w-full min-h-[34px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 font-mono text-[11px]"
                 >
                   <option value="defocus">镜头失焦模糊 (圆盘 PSF)</option>
                   <option value="motion">手抖运动模糊 (线性位移 PSF)</option>
@@ -592,13 +780,17 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                   onTouchEnd={() => onApply()}
                   className="w-full accent-blue-600"
                 />
+                <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                  <span>← 更锐利 (白边/噪点略增)</span>
+                  <span>画面更平滑干净 →</span>
+                </div>
               </div>
             </div>
           )}
         </div>
 
         {/* 阶段 6: 二值化与锐化 */}
-        <div className="bg-[#121826] p-3 rounded-lg border border-slate-800">
+        <div className={`bg-[#121826] p-3 rounded-lg border transition-all ${moduleRing('s6')}`}>
           <div className="flex items-center justify-between mb-2">
             <span className="flex items-center font-medium text-slate-200">
               <Type className="w-3.5 h-3.5 text-emerald-400 mr-1.5" />
@@ -620,7 +812,7 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                   aria-label="阈值分割算法"
                   value={params.binarize_method}
                   onChange={(e) => updateAndApply('binarize_method', e.target.value as any)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 font-mono text-[11px]"
+                  className="w-full min-h-[34px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 font-mono text-[11px]"
                 >
                   <option value="sauvola">Sauvola 局部动态阈值 (推荐)</option>
                   <option value="otsu">Otsu 全局大津阈值</option>
@@ -645,6 +837,10 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                     onTouchEnd={() => onApply()}
                     className="w-full accent-blue-600"
                   />
+                  <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                    <span>← 字迹更浓粗 (救淡字)</span>
+                    <span>纸底更净白 (去黑点) →</span>
+                  </div>
                 </div>
               )}
               <div>
@@ -664,8 +860,12 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                   onTouchEnd={() => onApply()}
                   className="w-full accent-blue-600"
                 />
+                <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                  <span>← 柔和自然</span>
+                  <span>字迹轮廓更锐利 →</span>
+                </div>
               </div>
-              <label className="flex items-center justify-between bg-slate-900/80 px-2.5 py-1.5 rounded border border-slate-800 cursor-pointer">
+              <label className="flex items-center justify-between bg-slate-900/80 px-2.5 min-h-[36px] rounded-lg border border-slate-800 cursor-pointer">
                 <span className="text-[11px] font-mono text-slate-300">
                   笔画抗锯齿柔化 (消除边缘毛刺)
                 </span>
@@ -673,7 +873,7 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                   type="checkbox"
                   checked={params.soft_blend}
                   onChange={(e) => updateAndApply('soft_blend', e.target.checked)}
-                  className="accent-blue-600 rounded cursor-pointer"
+                  className="accent-blue-600 rounded cursor-pointer w-4 h-4"
                 />
               </label>
             </div>

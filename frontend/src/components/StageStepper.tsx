@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { ChevronRight, Activity, Eye } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ChevronRight, ChevronLeft, Activity, Eye, Hand } from 'lucide-react';
 import gsap from 'gsap';
 
 export interface StageItem {
@@ -40,6 +40,18 @@ export const StageStepper: React.FC<StageStepperProps> = ({
   onSelectDiag,
 }) => {
   const listRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef<{
+    isDown: boolean;
+    startX: number;
+    startScrollLeft: number;
+    hasDragged: boolean;
+  }>({
+    isDown: false,
+    startX: 0,
+    startScrollLeft: 0,
+    hasDragged: false,
+  });
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     if (!listRef.current || stages.length === 0) return;
@@ -61,36 +73,116 @@ export const StageStepper: React.FC<StageStepperProps> = ({
     );
   }, [stages]);
 
+  // 全局监听鼠标松开，防止鼠标拖出栏外松开后卡在拖拽态
+  useEffect(() => {
+    const handleWindowMouseUp = () => {
+      if (dragState.current.isDown) {
+        dragState.current.isDown = false;
+        setIsDragging(false);
+        // 延迟清零 hasDragged，以便紧随其后的 click 回调能识别刚才发生了拖拽
+        window.setTimeout(() => {
+          dragState.current.hasDragged = false;
+        }, 40);
+      }
+    };
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    return () => window.removeEventListener('mouseup', handleWindowMouseUp);
+  }, []);
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !listRef.current) return;
+    dragState.current.isDown = true;
+    dragState.current.startX = e.clientX;
+    dragState.current.startScrollLeft = listRef.current.scrollLeft;
+    dragState.current.hasDragged = false;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!dragState.current.isDown || !listRef.current) return;
+    const dx = e.clientX - dragState.current.startX;
+    if (Math.abs(dx) >= 6) {
+      dragState.current.hasDragged = true;
+      if (!isDragging) setIsDragging(true);
+    }
+    if (dragState.current.hasDragged) {
+      e.preventDefault();
+      listRef.current.scrollLeft = dragState.current.startScrollLeft - dx;
+    }
+  };
+
+  // 支持鼠标滚轮上下滚动直接转化为横向平移
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const el = listRef.current;
+    if (!el) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) {
+      el.scrollLeft += e.deltaY;
+    }
+  };
+
+  const nudgeScroll = (delta: number) => {
+    listRef.current?.scrollBy({ left: delta, behavior: 'smooth' });
+  };
+
   return (
     <div className="bg-[#0d121d] rounded-xl border border-slate-800 p-2.5 select-none h-full flex flex-col justify-between">
-      <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-800/80">
-        <div className="flex items-center space-x-2 text-xs font-mono text-slate-300">
-          <Activity className="w-3.5 h-3.5 text-blue-400" />
-          <span className="font-semibold">处理流程拆解与中间视图</span>
-          <span className="text-[10px] text-slate-500 hidden sm:inline">
-            (点击任意步骤或下方标签，可检视对应阶段的图层与分析图)
+      <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-800/80 gap-2">
+        <div className="flex items-center space-x-2 text-xs font-mono text-slate-300 min-w-0">
+          <Activity className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+          <span className="font-semibold truncate">处理流程拆解与中间视图</span>
+          <span className="text-[10px] text-slate-500 hidden md:inline-flex items-center whitespace-nowrap">
+            <Hand className="w-3 h-3 mr-1 opacity-75" />
+            支持长按左右拖动或滚轮横滑
           </span>
         </div>
-        <button
-          onClick={() => {
-            onSelectStage(null);
-            onSelectDiag(null);
-          }}
-          data-fx-magnet="subtle"
-          className={`text-[11px] font-mono px-2.5 py-0.5 rounded-lg flex items-center transition-colors ${
-            currentStageId === null
-              ? 'optical-fx-primary bg-blue-600 text-white font-bold shadow border border-blue-400/40'
-              : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-blue-500/40'
-          }`}
-        >
-          <Eye className="w-3 h-3 mr-1" />
-          返回最终成品图
-        </button>
+
+        <div className="flex items-center space-x-1.5 flex-shrink-0">
+          <div className="hidden sm:flex items-center space-x-1">
+            <button
+              type="button"
+              onClick={() => nudgeScroll(-240)}
+              data-fx-sheen="off"
+              aria-label="向左滚动步骤栏"
+              className="p-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => nudgeScroll(240)}
+              data-fx-sheen="off"
+              aria-label="向右滚动步骤栏"
+              className="p-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <button
+            onClick={() => {
+              onSelectStage(null);
+              onSelectDiag(null);
+            }}
+            data-fx-magnet="subtle"
+            className={`text-[11px] font-mono px-2.5 py-1 rounded-lg flex items-center whitespace-nowrap transition-colors ${
+              currentStageId === null
+                ? 'optical-fx-primary bg-blue-600 text-white font-bold shadow border border-blue-400/40'
+                : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-blue-500/40'
+            }`}
+          >
+            <Eye className="w-3 h-3 mr-1" />
+            返回最终成品图
+          </button>
+        </div>
       </div>
 
       <div
         ref={listRef}
-        className="flex items-stretch space-x-2 overflow-x-auto pb-0.5 pt-0.5 flex-1"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onWheel={handleWheel}
+        className={`flex items-stretch space-x-2 overflow-x-auto pb-0.5 pt-0.5 flex-1 ${
+          isDragging ? 'cursor-grabbing' : 'cursor-grab'
+        }`}
       >
         {stages.map((stage, idx) => {
           const isSelected = currentStageId === stage.stage_id;
@@ -100,11 +192,14 @@ export const StageStepper: React.FC<StageStepperProps> = ({
             <React.Fragment key={stage.stage_id}>
               <div
                 onClick={() => {
+                  if (dragState.current.hasDragged) return;
                   onSelectStage(stage);
                   onSelectDiag(null);
                 }}
                 data-fx-surface=""
-                className={`stage-card-item flex-shrink-0 w-52 p-2 rounded-lg border transition-all cursor-pointer flex flex-col justify-between ${
+                className={`stage-card-item flex-shrink-0 w-52 p-2 rounded-lg border transition-all flex flex-col justify-between ${
+                  isDragging ? 'cursor-grabbing' : 'cursor-pointer'
+                } ${
                   isSelected
                     ? 'bg-blue-950/40 border-blue-500 shadow-md shadow-blue-950/50'
                     : 'bg-[#121826] border-slate-800 hover:border-slate-700 hover:bg-[#161e30]'
@@ -134,11 +229,12 @@ export const StageStepper: React.FC<StageStepperProps> = ({
                           key={k}
                           onClick={(e) => {
                             e.stopPropagation();
+                            if (dragState.current.hasDragged) return;
                             onSelectStage(stage);
                             onSelectDiag(activeDiag ? null : k);
                           }}
                           title={`查看 ${DIAG_LABELS[k] || k}`}
-                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded whitespace-nowrap flex-shrink-0 transition-colors ${
+                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded whitespace-nowrap flex-shrink-0 transition-colors ${
                             activeDiag
                               ? 'bg-amber-500 text-slate-950 font-bold shadow'
                               : 'bg-slate-900/90 text-slate-400 hover:text-amber-300 border border-slate-800'

@@ -1,0 +1,18 @@
+services:
+  docscanner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: docscanner-enhancer:3.0
+    container_name: docscanner-enhancer
+    restart: unless-stopped
+    ports:
+      # 默认映射宿主机 8088 -> 容器 8080，避开常见 80 / 8080 端口冲突
+      - "${DOCSCANNER_PORT:-8088}:8080"
+    environment:
+      - TZ=Asia/Shanghai
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"

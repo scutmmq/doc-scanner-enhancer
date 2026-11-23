@@ -569,21 +569,29 @@ async def create_capture_session(request: Request):
     }
 
     lan_ip = _get_lan_ip()
-    req_host = request.url.hostname or "localhost"
-    req_port = request.url.port
-    scheme = request.url.scheme or "http"
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+    forwarded_host = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
+    scheme = forwarded_proto or request.url.scheme or "http"
 
-    # 若桌面端通过 localhost/127.0.0.1 访问，则自动替换为局域网 IP 供同 Wi-Fi 手机扫码连接
-    target_host = lan_ip if req_host in ("localhost", "127.0.0.1", "0.0.0.0") else req_host
-    port_part = f":{req_port}" if req_port and req_port not in (80, 443) else ""
-    capture_url = f"{scheme}://{target_host}{port_part}/?capture_session={session_id}"
+    if forwarded_host:
+        capture_url = f"{scheme}://{forwarded_host}/?capture_session={session_id}"
+        display_ip = forwarded_host
+    else:
+        req_host = request.url.hostname or "localhost"
+        req_port = request.url.port
+        # 若桌面端通过 localhost/127.0.0.1 访问，则自动替换为局域网 IP 供同 Wi-Fi 手机扫码连接；
+        # 若部署在云服务器并通过公网 IP/域名访问，则直接保留访问主机地址与端口。
+        target_host = lan_ip if req_host in ("localhost", "127.0.0.1", "0.0.0.0") else req_host
+        port_part = f":{req_port}" if req_port and req_port not in (80, 443) else ""
+        capture_url = f"{scheme}://{target_host}{port_part}/?capture_session={session_id}"
+        display_ip = target_host
 
     qr_b64 = _make_qr_base64(capture_url)
     return {
         "success": True,
         "session_id": session_id,
         "capture_url": capture_url,
-        "lan_ip": lan_ip,
+        "lan_ip": display_ip,
         "qr_base64": qr_b64,
         "expires_in_sec": _CAPTURE_TTL_SEC,
     }

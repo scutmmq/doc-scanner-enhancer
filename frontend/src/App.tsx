@@ -16,7 +16,6 @@ import {
   Play,
   Camera,
   Wand2,
-  Palette,
 } from 'lucide-react';
 import { DarkroomViewer } from './components/DarkroomViewer';
 import {
@@ -571,7 +570,7 @@ export default function App() {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className="ds-workbench-shell flex flex-col min-h-screen lg:h-screen w-screen bg-[#070a10] text-slate-100 font-sans lg:overflow-hidden relative"
+      className="ds-workbench-shell flex flex-col min-h-screen lg:h-screen w-full bg-[#070a10] text-slate-100 font-sans lg:overflow-hidden relative"
     >
       {/* 首次进入全屏光学暗房开屏引导（随时可在顶栏点击「重温开屏」重播） */}
       {showHero && (
@@ -580,6 +579,10 @@ export default function App() {
           onOpenPhoneRelay={() => {
             dismissHero();
             setShowPhoneModal(true);
+          }}
+          onDirectCamera={() => {
+            dismissHero();
+            window.setTimeout(() => mobileCameraRef.current?.click(), 120);
           }}
         />
       )}
@@ -617,18 +620,19 @@ export default function App() {
         className="hidden"
       />
 
-      {/* 顶部产品导航栏 */}
-      <header className="flex items-center justify-between px-4 sm:px-5 py-2.5 bg-[#0d121d] border-b border-slate-800/90 select-none z-30 gap-2 flex-wrap">
-        <div className="flex items-center space-x-3">
+      {/* 顶部产品导航栏（桌面端完整工具栏；移动端自动精简为单行 56px 紧凑顶栏） */}
+      <header className="flex items-center justify-between px-3 sm:px-5 py-2 sm:py-2.5 bg-[#0d121d] border-b border-slate-800/90 select-none z-30 gap-2 flex-nowrap">
+        <div className="flex items-center space-x-2.5 flex-shrink-0">
           <button
             onClick={handleResetWorkspace}
             title="返回起始页"
-            className="flex items-center space-x-2.5 text-left group min-h-[40px]"
+            aria-label="返回 DocScanner 起始页"
+            className="flex items-center space-x-2 text-left group min-h-[40px]"
           >
-            <div className="w-8 h-8 rounded-lg bg-blue-600 group-hover:bg-blue-500 flex items-center justify-center font-mono font-bold text-white shadow-lg shadow-blue-600/25 transition-colors">
+            <div className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-blue-600 group-hover:bg-blue-500 flex items-center justify-center font-mono font-bold text-white shadow-lg shadow-blue-600/25 transition-colors flex-shrink-0">
               DS
             </div>
-            <div>
+            <div className="hidden sm:block">
               <div className="flex items-center space-x-2">
                 <span className="font-bold text-sm tracking-wide text-white">DocScanner</span>
                 <span className="text-[11px] text-slate-400 hidden 2xl:inline">
@@ -651,10 +655,10 @@ export default function App() {
           )}
         </div>
 
-        <div className="flex items-center space-x-1.5 sm:space-x-2 flex-wrap justify-end">
-          {/* 极简模式 / 专业视图 一键双模式切换（有图时最醒目，无图也可预选） */}
+        <div className="flex items-center space-x-1.5 sm:space-x-2 flex-nowrap justify-end min-w-0">
+          {/* 极简模式 / 专业视图 一键双模式切换 */}
           <div
-            className="flex bg-[#090d16] p-0.5 rounded-lg border border-slate-800"
+            className="flex bg-[#090d16] p-0.5 rounded-lg border border-slate-800 flex-shrink-0"
             role="group"
             aria-label="切换极简模式或专业视图"
           >
@@ -664,37 +668,40 @@ export default function App() {
                 setActiveStage(null);
                 setActiveDiagKey(null);
               }}
-              className={`px-2.5 py-1.5 rounded-md text-xs font-medium flex items-center transition-colors ${
+              className={`min-h-[34px] px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium flex items-center whitespace-nowrap transition-colors ${
                 workspaceMode === 'simple'
                   ? 'bg-blue-600 text-white shadow'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Wand2 className="w-3.5 h-3.5 mr-1" />
-              <span>极简模式</span>
+              <Wand2 className="w-3.5 h-3.5 mr-1 flex-shrink-0" />
+              <span className="sm:hidden">极简</span>
+              <span className="hidden sm:inline">极简模式</span>
             </button>
             <button
               onClick={() => setWorkspaceMode('expert')}
-              className={`px-2.5 py-1.5 rounded-md text-xs font-medium flex items-center transition-colors ${
+              className={`min-h-[34px] px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium flex items-center whitespace-nowrap transition-colors ${
                 workspaceMode === 'expert'
                   ? 'bg-blue-600 text-white shadow'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Sliders className="w-3.5 h-3.5 mr-1" />
-              <span>专业视图</span>
+              <Sliders className="w-3.5 h-3.5 mr-1 flex-shrink-0" />
+              <span className="sm:hidden">专业</span>
+              <span className="hidden sm:inline">专业视图</span>
             </button>
           </div>
 
           {/* 主题外观一键切换（暗房光学 / 宣纸晴空 / 徕卡暖金） */}
-          <div ref={themeMenuRef} className="relative">
+          <div ref={themeMenuRef} className="relative flex-shrink-0">
             <button
               onClick={() => setShowThemeMenu((v) => !v)}
               data-fx-magnet="subtle"
-              className="flex items-center px-2.5 py-1.5 rounded-lg bg-[#121826] hover:bg-[#192338] text-slate-200 border border-slate-800 text-xs transition-colors"
+              aria-label={`切换工作台主题，当前：${currentThemeMeta.label}`}
+              className="min-h-[38px] sm:min-h-[34px] flex items-center px-2 sm:px-2.5 py-1.5 rounded-lg bg-[#121826] hover:bg-[#192338] text-slate-200 border border-slate-800 text-xs transition-colors"
               title="切换工作台视觉主题风格"
             >
-              <span className="flex items-center -space-x-1 mr-1.5">
+              <span className="flex items-center -space-x-1 sm:mr-1.5">
                 <span
                   className="w-2.5 h-2.5 rounded-full border border-white/30"
                   style={{ backgroundColor: currentThemeMeta.swatches[0] }}
@@ -705,7 +712,6 @@ export default function App() {
                 />
               </span>
               <span className="hidden sm:inline">{currentThemeMeta.label}</span>
-              <Palette className="w-3.5 h-3.5 sm:hidden" />
               <ChevronDown className="w-3 h-3 ml-1 text-slate-400" />
             </button>
 
@@ -755,40 +761,41 @@ export default function App() {
             )}
           </div>
 
-          {/* 手机扫码无线拍传 */}
+          {/* 手机扫码无线拍传（仅桌面端展示；手机端直接在本地拍照上传） */}
           <button
             onClick={() => setShowPhoneModal(true)}
             data-fx-magnet="subtle"
-            className="flex items-center px-3 py-1.5 rounded-lg bg-[#121826] hover:bg-[#192338] text-slate-200 border border-slate-800 hover:border-amber-400/40 text-xs transition-colors"
+            className="hidden sm:flex items-center px-3 py-1.5 rounded-lg bg-[#121826] hover:bg-[#192338] text-slate-200 border border-slate-800 hover:border-amber-400/40 text-xs transition-colors flex-shrink-0"
             title="用手机扫码直接拍照传到电脑工作台"
           >
-            <QrCode className="w-3.5 h-3.5 sm:mr-1.5 text-amber-400" />
-            <span className="hidden sm:inline">手机拍传</span>
+            <QrCode className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
+            <span>手机拍传</span>
           </button>
 
           {/* 重温开屏动画按钮 */}
           <button
             onClick={() => setShowHero(true)}
             data-fx-magnet="subtle"
-            className="hidden md:flex items-center px-2.5 py-1.5 rounded-lg bg-[#121826] hover:bg-[#182033] text-slate-300 border border-slate-800 hover:border-blue-400/40 text-xs transition-colors"
+            className="hidden md:flex items-center px-2.5 py-1.5 rounded-lg bg-[#121826] hover:bg-[#182033] text-slate-300 border border-slate-800 hover:border-blue-400/40 text-xs transition-colors flex-shrink-0"
             title="重温光学暗房开屏演示动画"
           >
             <Play className="w-3 h-3 mr-1.5 text-blue-400" />
             <span>重温开屏</span>
           </button>
 
-          {/* 示例图库下拉菜单 */}
+          {/* 示例图库下拉菜单（移动端有图时显示精简图标，无图时下方已有样张网格直接点击） */}
           {samples.length > 0 && (
-            <div ref={sampleMenuRef} className="relative">
+            <div ref={sampleMenuRef} className={`relative flex-shrink-0 ${rawImageBase64 ? 'block' : 'hidden sm:block'}`}>
               <button
                 onClick={() => setShowSampleMenu((v) => !v)}
                 disabled={isProcessing}
                 data-fx-magnet="subtle"
-                className="flex items-center px-2.5 sm:px-3 py-1.5 rounded-lg bg-[#121826] hover:bg-[#182033] text-slate-300 border border-slate-800 hover:border-slate-700 text-xs transition-colors"
+                aria-label="选择试用样张"
+                className="min-h-[38px] sm:min-h-[34px] flex items-center px-2 sm:px-3 py-1.5 rounded-lg bg-[#121826] hover:bg-[#182033] text-slate-300 border border-slate-800 hover:border-slate-700 text-xs transition-colors"
               >
                 <FolderOpen className="w-3.5 h-3.5 sm:mr-1.5 text-amber-400" />
                 <span className="hidden sm:inline">试用样张</span>
-                <ChevronDown className="w-3.5 h-3.5 ml-1 text-slate-400" />
+                <ChevronDown className="w-3.5 h-3.5 ml-0.5 sm:ml-1 text-slate-400 hidden sm:inline" />
               </button>
 
               {showSampleMenu && (
@@ -827,7 +834,7 @@ export default function App() {
             <button
               onClick={() => setShowStageBar((v) => !v)}
               data-fx-magnet="subtle"
-              className={`hidden sm:flex items-center px-3 py-1.5 rounded-lg border text-xs transition-colors ${
+              className={`hidden sm:flex items-center px-3 py-1.5 rounded-lg border text-xs transition-colors flex-shrink-0 ${
                 showStageBar
                   ? 'bg-slate-800/80 border-slate-700 text-slate-200'
                   : 'bg-[#121826] border-slate-800 text-slate-400 hover:text-slate-200'
@@ -844,10 +851,11 @@ export default function App() {
             onClick={() => fileInputRef.current?.click()}
             disabled={isProcessing}
             data-fx-magnet="subtle"
-            className="flex items-center px-3 py-1.5 rounded-lg bg-[#161f33] hover:bg-[#1e2a45] text-slate-200 border border-slate-700/80 hover:border-blue-400/50 text-xs font-medium transition-all"
+            aria-label={rawImageBase64 ? '更换文档图片' : '上传文档图片'}
+            className="min-h-[38px] sm:min-h-[34px] flex items-center px-2.5 sm:px-3 py-1.5 rounded-lg bg-[#161f33] hover:bg-[#1e2a45] text-slate-200 border border-slate-700/80 hover:border-blue-400/50 text-xs font-medium transition-all flex-shrink-0"
           >
-            <Upload className="w-3.5 h-3.5 mr-1.5 text-blue-400" />
-            <span>{rawImageBase64 ? '更换图片' : '上传图片'}</span>
+            <Upload className="w-3.5 h-3.5 sm:mr-1.5 text-blue-400" />
+            <span className="hidden sm:inline">{rawImageBase64 ? '更换图片' : '上传图片'}</span>
           </button>
 
           {/* 导出高清图按钮 */}
@@ -857,7 +865,8 @@ export default function App() {
               magnetic="subtle"
               onClick={handleDownload}
               disabled={!finalImageBase64}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-medium"
+              aria-label="导出高清扫描件"
+              className="min-h-[38px] sm:min-h-[34px] px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-medium flex-shrink-0"
             >
               <Download className="w-3.5 h-3.5 sm:mr-1.5" />
               <span className="hidden sm:inline">导出图片</span>
