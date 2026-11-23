@@ -5,7 +5,7 @@
 """
 
 import time
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Callable
 from dataclasses import dataclass, field
 import numpy as np
 import cv2
@@ -14,6 +14,7 @@ from src.algorithms.geometric import rectify_document, render_geometric_diagnost
 from src.algorithms.color_space import (
     extract_luminance,
     restore_color,
+    preserve_colored_stamps,
     analyze_channel_statistics,
     render_channel_montage,
 )
@@ -30,6 +31,7 @@ from src.algorithms.binarization import (
     compute_sauvola_threshold_map,
 )
 from src.algorithms.sampling_quantization import apply_sampling_and_quantization
+from src.algorithms.auto_diagnose import diagnose_document
 from src.evaluation.ocr_evaluator import OCREvaluator
 
 
@@ -92,8 +94,14 @@ class PipelineConfig:
     sharpen_strength: float = 0.35
     soft_blend: bool = True
     
-    # 输出模式: 'binary' (高清黑白/抗锯齿文档), 'color' (高清保真无偏色彩色文档), 'gray' (增强灰度文档)
+    # 输出模式: 'binary' (高清黑白/抗锯齿文档), 'stamp_preserve' (红章/批注彩印), 'color' (高清保真无偏色彩色文档), 'gray' (增强灰度文档)
     output_mode: str = "binary"
+
+    # 4K 手机原图多尺度工作金字塔上限（长边超过该值时等比缩放至清晰 300DPI 级工作尺寸，兼顾清晰度与 1-2s 极速响应）
+    max_working_dim: int = 2200
+
+    # 是否在执行前自动运行纯传统信号退化诊断并按诊断结论自适应覆盖各阶段开关
+    auto_diagnose: bool = False
 
 
 class DocumentScannerPipeline:
@@ -107,7 +115,9 @@ class DocumentScannerPipeline:
         self,
         raw_image: np.ndarray,
         collect_stages: bool = True,
-        perform_ocr: bool = True
+        perform_ocr: bool = True,
+        progress_callback: Optional[Callable[[int, str, int], None]] = None,
+        run_diagnosis: bool = False,
     ) -> Dict[str, Any]:
         """
         运行全套传统算法增强管线。
@@ -116,13 +126,34 @@ class DocumentScannerPipeline:
             raw_image: 手机拍摄的原始图像 (BGR uint8)
             collect_stages: 是否保存每个阶段的中间图与诊断图（用于报告和答辩展示）
             perform_ocr: 是否由下游 RapidOCR 提取文本
+            progress_callback: 可选进度回调函数 fn(stage_id, stage_label, percent)
+            run_diagnosis: 是否即使在非 auto_diagnose 模式下也返回诊断报告
             
         返回:
-            包含 final_image, stages, ocr_text, total_elapsed_ms 的字典
+            包含 final_image, stages, ocr_text, diagnosis, total_elapsed_ms 的字典
         """
+        def _emit(stage_id: int, label: str, percent: int):
+            if progress_callback is not None:
+                try:
+                    progress_callback(stage_id, label, percent)
+                except Exception:
+                    pass
+
         stages: List[StageResult] = []
         start_total = time.perf_counter()
-        current_img = raw_image.copy()
+        orig_h, orig_w = raw_image.shape[:2]
+
+        # 4K 多尺度工作金字塔：将 12MP/4K 实拍超大图平滑缩放至 max_working_dim 内处理
+        work_scale = 1.0
+        if self.config.max_working_dim > 0 and max(orig_h, orig_w) > self.config.max_working_dim:
+            work_scale = self.config.max_working_dim / float(max(orig_h, orig_w))
+            current_img = cv2.resize(
+                raw_image,
+                (max(1, int(round(orig_w * work_scale))), max(1, int(round(orig_h * work_scale)))),
+                interpolation=cv2.INTER_AREA
+            )
+        else:
+            current_img = raw_image.copy()
 
         # 若开启了采样/量化退化实验参数，先施加重采样与重量化
         if self.config.sampling_scale < 0.999 or self.config.quantization_bits < 8:
@@ -132,21 +163,56 @@ class DocumentScannerPipeline:
                 bits=self.config.quantization_bits
             )
 
+        # 可选：纯传统信号自动退化诊断
+        diagnosis: Optional[Dict[str, Any]] = None
+        if self.config.auto_diagnose or run_diagnosis:
+            _emit(0, "正在执行传统图像退化信号自动诊断...", 8)
+            diagnosis = diagnose_document(current_img)
+            if self.config.auto_diagnose:
+                rec = diagnosis.get("recommended_params", {})
+                # 若用户未手动拖拽四角点，则采用自动诊断结论动态配置传统算法管线
+                if self.config.manual_corners is None:
+                    self.config.enable_geometric = bool(rec.get("enable_geometric", self.config.enable_geometric))
+                self.config.enable_white_balance = bool(rec.get("enable_white_balance", True))
+                self.config.enable_illumination = bool(rec.get("enable_illumination", True))
+                self.config.denoise_method = str(rec.get("denoise_method", self.config.denoise_method))
+                self.config.denoise_ksize = int(rec.get("denoise_ksize", self.config.denoise_ksize))
+                self.config.enable_frequency_filter = bool(rec.get("enable_frequency_filter", self.config.enable_frequency_filter))
+                self.config.notch_radius = float(rec.get("notch_radius", self.config.notch_radius))
+                self.config.enable_restoration = bool(rec.get("enable_restoration", self.config.enable_restoration))
+                self.config.blur_type = str(rec.get("blur_type", self.config.blur_type))
+                self.config.defocus_radius = int(rec.get("defocus_radius", self.config.defocus_radius))
+                self.config.motion_length = int(rec.get("motion_length", self.config.motion_length))
+                self.config.motion_angle = float(rec.get("motion_angle", self.config.motion_angle))
+                self.config.wiener_k = float(rec.get("wiener_k", self.config.wiener_k))
+                self.config.sharpen_strength = float(rec.get("sharpen_strength", self.config.sharpen_strength))
+                if rec.get("output_mode") == "stamp_preserve" and self.config.output_mode == "binary":
+                    self.config.output_mode = "stamp_preserve"
+
         # ==========================================
         # 阶段 (1): 预处理与几何矫正 (透视变换)
         # ==========================================
+        _emit(1, "阶段 1/7 · 边缘检测与几何透视矫正", 18)
         t0 = time.perf_counter()
         pre_geo_img = current_img.copy()
         corners_used = None
         auto_detected = False
+        scaled_manual_corners = None
+        if self.config.manual_corners is not None:
+            scaled_manual_corners = np.asarray(self.config.manual_corners, dtype="float32") * work_scale
         if self.config.enable_geometric:
             current_img, corners_used, auto_detected = rectify_document(
-                current_img, manual_corners=self.config.manual_corners
+                current_img, manual_corners=scaled_manual_corners
             )
         else:
             h0, w0 = current_img.shape[:2]
             corners_used = np.array([[0, 0], [w0 - 1, 0], [w0 - 1, h0 - 1], [0, h0 - 1]], dtype="float32")
         elapsed_1 = (time.perf_counter() - t0) * 1000
+
+        # 将角点映射回输入原图坐标系，确保前端 4K 手动角点拖拽 1:1 对齐
+        corners_input_space = (
+            (corners_used / work_scale) if (corners_used is not None and work_scale < 1.0) else corners_used
+        )
 
         if collect_stages:
             geo_diag = render_geometric_diagnostics(pre_geo_img, corners_used, auto_detected)
@@ -156,9 +222,11 @@ class DocumentScannerPipeline:
                 output_image=current_img.copy(),
                 elapsed_ms=round(elapsed_1, 2),
                 metadata={
-                    "corners": corners_used.tolist() if corners_used is not None else [],
-                    "detected_corners": corners_used.tolist() if corners_used is not None else [],
+                    "corners": corners_input_space.tolist() if corners_input_space is not None else [],
+                    "detected_corners": corners_input_space.tolist() if corners_input_space is not None else [],
                     "auto_detected": auto_detected,
+                    "working_scale": round(work_scale, 4),
+                    "input_resolution": f"{orig_w}x{orig_h}",
                     "output_resolution": f"{current_img.shape[1]}x{current_img.shape[0]}"
                 },
                 diagnostic_images={"corner_detection": geo_diag}
@@ -167,6 +235,7 @@ class DocumentScannerPipeline:
         # ==========================================
         # 阶段 (2): 色彩空间解耦、白平衡与通道分离
         # ==========================================
+        _emit(2, "阶段 2/7 · 色彩空间解耦与纸白平衡", 32)
         t0 = time.perf_counter()
         if self.config.denoise_method != "none" and len(current_img.shape) == 3:
             current_img = spatial_denoise(
@@ -213,6 +282,7 @@ class DocumentScannerPipeline:
         orig_spectrum = None
         filtered_spectrum = None
 
+        _emit(4, "阶段 3/7 · 2D-FFT 频域摩尔纹检测与陷波", 46)
         t0_freq = time.perf_counter()
         if self.config.enable_frequency_filter:
             pre_filtered_lum, orig_spectrum, filtered_spectrum, detected_notch_peaks = apply_frequency_notch_filter(
@@ -226,6 +296,7 @@ class DocumentScannerPipeline:
             filtered_spectrum = orig_spectrum
         elapsed_4 = (time.perf_counter() - t0_freq) * 1000
 
+        _emit(5, "阶段 4/7 · PSF 建模与维纳去模糊复原", 58)
         t0_rest = time.perf_counter()
         psf_vis = None
         if self.config.enable_restoration:
@@ -249,6 +320,7 @@ class DocumentScannerPipeline:
         # ==========================================
         # 阶段 (3): 空间域光照校正与阴影去除
         # ==========================================
+        _emit(3, "阶段 5/7 · 形态学背景估计与 Retinex 去阴影", 72)
         t0 = time.perf_counter()
         bg_field = None
         applied_gamma = 1.0
@@ -345,6 +417,7 @@ class DocumentScannerPipeline:
         # ==========================================
         # 阶段 (6): 文字锐化与局部自适应二值化
         # ==========================================
+        _emit(6, "阶段 6/7 · 文字锐化、Sauvola 阈值与红章保真融合", 84)
         t0 = time.perf_counter()
         if self.config.enable_binarization:
             binary_output, sharpened_gray = binarize_document(
@@ -386,7 +459,16 @@ class DocumentScannerPipeline:
             ))
 
         # 决定最终输出图像
-        if self.config.output_mode == "color":
+        if self.config.output_mode == "stamp_preserve":
+            # 红章与彩色批注保真模式：纯白净底 + 锐利黑字 + 鲜艳红章/蓝墨批注
+            wb_color = aux_chroma.get("wb_image", current_img)
+            final_image = preserve_colored_stamps(
+                wb_bgr=wb_color,
+                binary_gray=binary_output,
+                sharpened_gray=sharpened_gray,
+                bg_field=bg_field,
+            )
+        elif self.config.output_mode == "color":
             # 利用二值化净化后的背景掩模消除纸面残余噪点，同时保留印章与彩字色度
             color_lum = np.where(binary_output >= 245, 250, sharpened_gray).astype(np.uint8)
             final_image = restore_color(color_lum, aux_chroma, clean_paper_chroma=True)
@@ -403,6 +485,7 @@ class DocumentScannerPipeline:
         ocr_text = ""
         ocr_boxes = []
         if perform_ocr:
+            _emit(7, "阶段 7/7 · OCR 文字识别与画质指标评测", 93)
             ocr_text, ocr_boxes = OCREvaluator.extract_text(final_image)
 
         return {
@@ -411,5 +494,6 @@ class DocumentScannerPipeline:
             "stages": stages,
             "ocr_text": ocr_text,
             "ocr_boxes": ocr_boxes,
+            "diagnosis": diagnosis,
             "total_elapsed_ms": round(total_elapsed, 2)
         }

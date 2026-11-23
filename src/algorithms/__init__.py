@@ -5,7 +5,14 @@
 """
 
 from .geometric import detect_document_corners, perspective_transform, rectify_document, order_points
-from .color_space import extract_luminance, restore_color, analyze_channel_statistics, split_hsv, split_ycbcr
+from .color_space import (
+    extract_luminance,
+    restore_color,
+    preserve_colored_stamps,
+    analyze_channel_statistics,
+    split_hsv,
+    split_ycbcr,
+)
 from .illumination import (
     estimate_background_illumination,
     remove_shadow_by_division,
@@ -34,6 +41,7 @@ from .binarization import (
     otsu_threshold,
     binarize_document,
 )
+from .auto_diagnose import diagnose_document
 
 __all__ = [
     "detect_document_corners",
@@ -42,6 +50,7 @@ __all__ = [
     "order_points",
     "extract_luminance",
     "restore_color",
+    "preserve_colored_stamps",
     "analyze_channel_statistics",
     "split_hsv",
     "split_ycbcr",
@@ -65,4 +74,5 @@ __all__ = [
     "niblack_threshold",
     "otsu_threshold",
     "binarize_document",
+    "diagnose_document",
 ]

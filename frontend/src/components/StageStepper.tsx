@@ -76,10 +76,11 @@ export const StageStepper: React.FC<StageStepperProps> = ({
             onSelectStage(null);
             onSelectDiag(null);
           }}
-          className={`text-[11px] font-mono px-2.5 py-0.5 rounded flex items-center transition-colors ${
+          data-fx-magnet="subtle"
+          className={`text-[11px] font-mono px-2.5 py-0.5 rounded-lg flex items-center transition-colors ${
             currentStageId === null
-              ? 'bg-blue-600 text-white font-bold shadow'
-              : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+              ? 'optical-fx-primary bg-blue-600 text-white font-bold shadow border border-blue-400/40'
+              : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-blue-500/40'
           }`}
         >
           <Eye className="w-3 h-3 mr-1" />
@@ -102,29 +103,30 @@ export const StageStepper: React.FC<StageStepperProps> = ({
                   onSelectStage(stage);
                   onSelectDiag(null);
                 }}
-                className={`stage-card-item flex-shrink-0 w-48 p-2 rounded-lg border transition-all cursor-pointer flex flex-col justify-between ${
+                data-fx-surface=""
+                className={`stage-card-item flex-shrink-0 w-52 p-2 rounded-lg border transition-all cursor-pointer flex flex-col justify-between ${
                   isSelected
                     ? 'bg-blue-950/40 border-blue-500 shadow-md shadow-blue-950/50'
                     : 'bg-[#121826] border-slate-800 hover:border-slate-700 hover:bg-[#161e30]'
                 }`}
               >
                 <div>
-                  <div className="flex items-center justify-between text-[10px] font-mono mb-1 tabular-nums">
+                  <div className="flex items-center justify-between text-[10px] font-mono mb-0.5 tabular-nums">
                     <span className="text-slate-400 font-bold">STAGE 0{stage.stage_id}</span>
                     <span className="text-blue-400">{stage.elapsed_ms} ms</span>
                   </div>
 
                   <div
-                    className="text-[11px] font-medium text-slate-200 truncate mb-1.5"
+                    className="text-[11px] font-medium text-slate-200 truncate mb-1"
                     title={stage.stage_name}
                   >
                     {stage.stage_name}
                   </div>
                 </div>
 
-                {/* 阶段诊断图快捷胶囊 */}
+                {/* 阶段诊断图快捷胶囊（单行紧凑排列防裁切） */}
                 {diagKeys.length > 0 && (
-                  <div className="pt-1.5 border-t border-slate-800/80 flex flex-wrap gap-1">
+                  <div className="pt-1 border-t border-slate-800/80 flex flex-nowrap gap-1 overflow-x-auto">
                     {diagKeys.map((k) => {
                       const activeDiag = isSelected && selectedDiagKey === k;
                       return (
@@ -136,7 +138,7 @@ export const StageStepper: React.FC<StageStepperProps> = ({
                             onSelectDiag(activeDiag ? null : k);
                           }}
                           title={`查看 ${DIAG_LABELS[k] || k}`}
-                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded transition-colors ${
+                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded whitespace-nowrap flex-shrink-0 transition-colors ${
                             activeDiag
                               ? 'bg-amber-500 text-slate-950 font-bold shadow'
                               : 'bg-slate-900/90 text-slate-400 hover:text-amber-300 border border-slate-800'

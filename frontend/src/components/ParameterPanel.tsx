@@ -11,9 +11,11 @@ import {
   Palette,
   RotateCcw
 } from 'lucide-react';
+import { OpticalButton } from './OpticalButton';
 
 export interface PipelineParams {
-  output_mode: 'binary' | 'color' | 'gray';
+  output_mode: 'binary' | 'stamp_preserve' | 'color' | 'gray';
+  auto_diagnose?: boolean;
   enable_geometric: boolean;
   manual_corners?: number[][] | null;
   color_space: 'hsv' | 'ycbcr';
@@ -232,20 +234,23 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
               onApply(DEFAULT_PIPELINE_PARAMS);
             }}
             disabled={isProcessing}
+            data-fx-magnet="subtle"
             title="恢复默认参数"
             aria-label="恢复默认参数"
-            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
+            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-700 transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
-          <button
+          <OpticalButton
+            variant="pill"
+            magnetic="subtle"
             onClick={() => onApply()}
             disabled={isProcessing}
-            className="flex items-center px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium shadow-md transition-all active:scale-95"
+            className="px-3 py-1.5 rounded-lg font-medium"
           >
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isProcessing ? 'animate-spin' : ''}`} />
-            刷新效果
-          </button>
+            <span>刷新效果</span>
+          </OpticalButton>
         </div>
       </div>
 
@@ -263,8 +268,9 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
               key={preset.id}
               onClick={() => applyPreset(preset.patch)}
               disabled={isProcessing}
+              data-fx-magnet="subtle"
               title={preset.desc}
-              className="py-1.5 px-2 rounded bg-slate-900/90 hover:bg-blue-600/20 hover:border-blue-500/50 border border-slate-800 text-[11px] font-mono text-slate-200 hover:text-blue-300 transition-all text-center truncate"
+              className="py-1.5 px-2 rounded-lg bg-slate-900/90 hover:bg-blue-600/20 hover:border-blue-500/50 border border-slate-800 text-[11px] font-mono text-slate-200 hover:text-blue-300 transition-all text-center truncate"
             >
               {preset.label}
             </button>
@@ -276,9 +282,10 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
         {/* 输出文档模式 */}
         <div className="bg-[#121826] p-3 rounded-lg border border-slate-800">
           <label className="block text-[11px] font-medium text-slate-300 mb-2">输出文档样式</label>
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5">
             {([
               { id: 'binary', label: '高清黑白扫描' },
+              { id: 'stamp_preserve', label: '红章 / 批注彩印' },
               { id: 'gray', label: '柔和增强灰度' },
               { id: 'color', label: '原彩净底保真' },
             ] as const).map((mode) => (
@@ -286,10 +293,11 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                 key={mode.id}
                 onClick={() => updateAndApply('output_mode', mode.id)}
                 disabled={isProcessing}
-                className={`py-1.5 px-2 rounded text-center font-mono text-[11px] transition-colors ${
+                data-fx-magnet="subtle"
+                className={`py-2 px-2 rounded-lg text-center font-mono text-[11px] transition-colors ${
                   params.output_mode === mode.id
-                    ? 'bg-blue-600 text-white font-bold shadow'
-                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    ? 'optical-fx-primary bg-blue-600 text-white font-bold shadow-[0_6px_18px_-4px_rgba(37,99,235,0.65)] border border-blue-400/50'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800 hover:border-blue-500/40'
                 }`}
               >
                 {mode.label}

@@ -19,6 +19,8 @@ interface DarkroomViewerProps {
   stageName?: string;
   isDiagnosticView?: boolean;
   isProcessing?: boolean;
+  progressPercent?: number;
+  progressLabel?: string;
   ocrBoxes?: Array<{
     box: number[][];
     text: string;
@@ -35,6 +37,8 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
   stageName = '增强后文档',
   isDiagnosticView = false,
   isProcessing = false,
+  progressPercent = 0,
+  progressLabel = '正在执行传统数字图像增强管线...',
   ocrBoxes = [],
   detectedCorners = null,
   onApplyManualCorners,
@@ -159,6 +163,7 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
           {ocrBoxes && ocrBoxes.length > 0 && viewMode !== 'corner-edit' && (
             <button
               onClick={() => setShowOcrOverlay((v) => !v)}
+              data-fx-magnet="subtle"
               className={`px-2.5 py-1 rounded text-[11px] font-mono border transition-colors flex items-center ${
                 showOcrOverlay
                   ? 'bg-emerald-600/20 border-emerald-500/60 text-emerald-300 font-semibold'
@@ -212,7 +217,8 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
           <div className="flex items-center bg-slate-900 rounded border border-slate-800 px-1 tabular-nums">
             <button
               onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
-              className="p-1 text-slate-400 hover:text-white"
+              data-fx-sheen="off"
+              className="p-1 text-slate-400 hover:text-white rounded"
               title="缩小"
               aria-label="缩小图像"
             >
@@ -223,7 +229,8 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
             </span>
             <button
               onClick={() => setZoom((z) => Math.min(3.0, z + 0.25))}
-              className="p-1 text-slate-400 hover:text-white"
+              data-fx-sheen="off"
+              className="p-1 text-slate-400 hover:text-white rounded"
               title="放大"
               aria-label="放大图像"
             >
@@ -231,7 +238,8 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
             </button>
             <button
               onClick={() => setZoom(1)}
-              className="p-1 text-slate-500 hover:text-slate-300 ml-0.5 border-l border-slate-800"
+              data-fx-sheen="off"
+              className="p-1 text-slate-500 hover:text-slate-300 ml-0.5 border-l border-slate-800 rounded"
               title="重置缩放"
               aria-label="重置缩放"
             >
@@ -243,16 +251,27 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
 
       {/* 图像渲染核心暗房区域 */}
       <div className="flex-1 relative overflow-hidden flex items-center justify-center p-3 bg-[#080b11] select-none">
-        {/* 算法实时运算遮罩反馈 */}
+        {/* 算法实时运算 SSE 进度条反馈 */}
         {isProcessing && (
-          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] z-30 flex flex-col items-center justify-center">
-            <div className="bg-[#121826] border border-blue-500/40 rounded-xl px-5 py-3.5 shadow-2xl flex items-center space-x-3">
-              <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-              <div className="text-xs font-mono">
-                <div className="text-slate-100 font-semibold">正在执行 7 阶段传统图像增强与 OCR 评测...</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">
-                  Retinex 光照估计 · 2D-FFT 频域陷波 · 维纳滤波 · Sauvola 二值化
+          <div className="absolute inset-0 bg-slate-950/65 backdrop-blur-[2px] z-30 flex flex-col items-center justify-center p-4">
+            <div className="bg-[#121826] border border-blue-500/40 rounded-xl px-5 py-4 shadow-2xl w-full max-w-sm space-y-3">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <div className="flex items-center space-x-2.5 text-slate-100 font-semibold truncate">
+                  <Loader2 className="w-4 h-4 text-blue-400 animate-spin flex-shrink-0" />
+                  <span className="truncate">{progressLabel || '正在执行增强处理...'}</span>
                 </div>
+                <span className="text-blue-400 tabular-nums ml-2 flex-shrink-0">
+                  {Math.max(5, Math.min(100, Math.round(progressPercent)))}%
+                </span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-slate-900 border border-slate-800 overflow-hidden">
+                <div
+                  className="h-full bg-blue-500 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${Math.max(8, Math.min(100, progressPercent))}%` }}
+                />
+              </div>
+              <div className="text-[10px] font-mono text-slate-400">
+                自动退化诊断 · Retinex 去阴影 · 2D-FFT 陷波 · Sauvola 增强
               </div>
             </div>
           </div>
@@ -282,7 +301,8 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
                   }
                   setViewMode('slider');
                 }}
-                className="flex items-center px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-colors"
+                data-fx-magnet="subtle"
+                className="optical-fx-primary flex items-center px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold shadow-md shadow-amber-500/25 transition-colors"
               >
                 <Check className="w-3.5 h-3.5 mr-1" /> 应用透视矫正
               </button>
@@ -482,6 +502,7 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
               >
                 <button
                   type="button"
+                  data-fx="off"
                   aria-label="左右拖动对比增强前后图像"
                   className="w-11 h-11 -ml-[22px] rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center text-white text-xs font-bold select-none cursor-grab active:cursor-grabbing hover:scale-110 transition-transform"
                 >

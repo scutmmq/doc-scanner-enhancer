@@ -1,5 +1,6 @@
 import React from 'react';
 import { Grid, Play } from 'lucide-react';
+import { OpticalButton } from './OpticalButton';
 
 interface SamplingSweepItem {
   scale_factor: number;
@@ -123,14 +124,16 @@ export const SamplingLabPanel: React.FC<SamplingLabPanelProps> = ({
       </div>
 
       {/* 一键运行多梯度可读性测试 */}
-      <button
+      <OpticalButton
+        variant="primary"
+        magnetic="subtle"
         onClick={onRunSweep}
         disabled={isSweepLoading}
-        className="w-full min-h-[40px] py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium flex items-center justify-center shadow-md transition-all active:scale-[0.99]"
+        className="w-full min-h-[44px] py-2 px-3 rounded-xl font-medium"
       >
         <Play className="w-3.5 h-3.5 mr-1.5 fill-current" />
-        {isSweepLoading ? '正在测试不同分辨率与位深下的识别率...' : '生成多分辨率与位深可读性对比表'}
-      </button>
+        <span>{isSweepLoading ? '正在测试不同分辨率与位深下的识别率...' : '生成多分辨率与位深可读性对比表'}</span>
+      </OpticalButton>
 
       {/* 测试结果数据表 */}
       {sweepData && (

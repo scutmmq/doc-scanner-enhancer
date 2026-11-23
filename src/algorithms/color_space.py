@@ -192,10 +192,10 @@ def restore_color(
     if space == "hsv":
         h, s = aux_data["channels"]
         if clean_paper_chroma:
-            # 纸面背景净化为中性纯白纸底 (S=0, V=250)
+            # 纸面背景净化为中性纯白纸底 (S=0, V=250)，但严格保护高饱和红章/蓝字批注 (S >= 42)
             s_clean = s.copy()
             v_clean = enhanced_luminance.copy()
-            paper_mask = (enhanced_luminance >= 200)
+            paper_mask = (enhanced_luminance >= 200) & (s < 42)
             s_clean[paper_mask] = 0
             v_clean[paper_mask] = 250
             return merge_hsv(h, s_clean, v_clean)
@@ -219,6 +219,69 @@ def restore_color(
         return merge_ycbcr(enhanced_luminance, cb, cr)
     else:
         raise ValueError(f"未知色彩空间模式: {space}")
+
+
+def preserve_colored_stamps(
+    wb_bgr: np.ndarray,
+    binary_gray: np.ndarray,
+    sharpened_gray: np.ndarray,
+    bg_field: np.ndarray = None,
+) -> np.ndarray:
+    """
+    红章与彩色批注保真融合模式 (Red Seal & Colored Annotation Preservation)。
+    纯传统色彩空间掩模 + Retinex 光照补偿算法：
+    1. 以 Sauvola 净化后的高清黑白纸面 (白底 250 + 锐利黑字) 作为文档底版；
+    2. 对纸白平衡后的彩色图执行低频照度场除法补偿，使阴影内的红章/蓝墨批注恢复明亮饱满色度；
+    3. 基于 HSV 饱和度与 RGB 通道分离度构造柔和连续的彩色印迹掩模，将鲜艳红章、蓝笔批注与彩色荧光高亮无锯齿叠合至纯白纸面，
+       同时确保黑白印刷正文与空白纸底零色偏、零杂斑。
+    """
+    if len(wb_bgr.shape) != 3:
+        return cv2.cvtColor(binary_gray, cv2.COLOR_GRAY2BGR)
+
+    h, w = binary_gray.shape[:2]
+    color_src = wb_bgr
+    if color_src.shape[0] != h or color_src.shape[1] != w:
+        color_src = cv2.resize(color_src, (w, h), interpolation=cv2.INTER_AREA)
+
+    # 1. 利用估计的低频照度背景场对彩色图做 Retinex 光照补偿，救活暗影中的红章/批注
+    comp_f = color_src.astype(np.float32)
+    if bg_field is not None:
+        bg_resized = bg_field
+        if bg_resized.shape[0] != h or bg_resized.shape[1] != w:
+            bg_resized = cv2.resize(bg_resized, (w, h), interpolation=cv2.INTER_LINEAR)
+        p95 = max(float(np.percentile(bg_resized, 95)), 1.0)
+        illum_ratio = np.clip(bg_resized.astype(np.float32) / p95, 0.22, 1.0)
+        comp_f = np.clip(comp_f / illum_ratio[:, :, np.newaxis], 0.0, 255.0)
+    comp_u8 = comp_f.astype(np.uint8)
+
+    # 2. 在 HSV 空间与 RGB 通道极差空间分离真实彩色印迹（红章/蓝墨/荧光标注）与中性黑字/纸底
+    hsv = cv2.cvtColor(comp_u8, cv2.COLOR_BGR2HSV)
+    h_ch, s_ch, v_ch = cv2.split(hsv)
+    ch_max = np.max(comp_u8, axis=2).astype(np.float32)
+    ch_min = np.min(comp_u8, axis=2).astype(np.float32)
+    chroma_span = ch_max - ch_min
+
+    # 平滑软掩模，防止红章边缘出现锯齿感
+    sat_score = np.clip((s_ch.astype(np.float32) - 42.0) / 38.0, 0.0, 1.0)
+    span_score = np.clip((chroma_span - 28.0) / 32.0, 0.0, 1.0)
+    val_gate = np.clip((v_ch.astype(np.float32) - 30.0) / 25.0, 0.0, 1.0)
+    stamp_alpha = sat_score * span_score * val_gate
+    stamp_alpha = cv2.GaussianBlur(stamp_alpha, (3, 3), 0)
+
+    # 3. 适度增强印章区域饱和度并保持局部锐度，提升扫描件观感
+    s_boost = np.clip(s_ch.astype(np.float32) * 1.18, 0.0, 255.0).astype(np.uint8)
+    v_blend = np.clip(
+        v_ch.astype(np.float32) * 0.72 + sharpened_gray.astype(np.float32) * 0.28,
+        0.0,
+        255.0,
+    ).astype(np.uint8)
+    vivid_bgr = merge_hsv(h_ch, s_boost, v_blend).astype(np.float32)
+
+    # 4. 以高清黑白扫描件作为净白底版融合彩色印迹
+    base_bgr = cv2.cvtColor(binary_gray, cv2.COLOR_GRAY2BGR).astype(np.float32)
+    alpha_3 = stamp_alpha[:, :, np.newaxis]
+    blended = base_bgr * (1.0 - alpha_3) + vivid_bgr * alpha_3
+    return np.clip(blended, 0.0, 255.0).astype(np.uint8)
 
 
 def render_channel_montage(image: np.ndarray, space: str = "hsv") -> np.ndarray:

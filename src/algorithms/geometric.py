@@ -33,11 +33,18 @@ def order_points(pts: np.ndarray) -> np.ndarray:
     return rect
 
 
-def _is_full_image_border(pts: np.ndarray, w: int, h: int, margin: float = 8.0) -> bool:
-    """判断检测到的四边形是否仅仅是图像自身的外边框（避免对无畸变正射图做冗余插值）"""
+def _is_full_image_border(pts: np.ndarray, w: int, h: int, margin: float = 10.0) -> bool:
+    """判断检测到的四边形是否仅仅是图像自身的外边框（含单角阴影裁切伪边界）"""
     expected = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
     dists = np.linalg.norm(pts - expected, axis=1)
-    return bool(np.all(dists <= margin))
+    if bool(np.all(dists <= margin)):
+        return True
+    # 若至少 3 个角点紧贴画幅边缘且面积占全图 94% 以上，说明是正射文档角落阴影导致的微小裁角，非真实透视倾斜
+    quad_area = float(cv2.contourArea(pts.reshape((-1, 1, 2))))
+    total_area = float(max(w * h, 1))
+    if int(np.sum(dists <= margin)) >= 3 and (quad_area / total_area) > 0.94:
+        return True
+    return False
 
 
 def _is_internal_axis_aligned_frame(pts: np.ndarray, image: np.ndarray) -> bool:
@@ -109,24 +116,38 @@ def detect_document_corners(
     image: np.ndarray,
     canny_thresh1: float = 50.0,
     canny_thresh2: float = 150.0,
-    min_area_ratio: float = 0.20
+    min_area_ratio: float = 0.20,
+    max_detect_dim: int = 1200
 ) -> Optional[np.ndarray]:
     """
-    自动检测文档拍摄图像中的 4 个角点。
+    自动检测文档拍摄图像中的 4 个角点（支持 4K 超大图自动下采样快速检测并等比映射回原图坐标）。
     
     算法步骤:
-    1. 灰度化与高斯双边/低通滤波（降噪，去除细碎纹理干扰）；
-    2. 策略 A: Canny 双阈值边缘检测 + 形态学闭运算连接断裂轮廓 + 凸包 Douglas-Peucker 拟合；
-    3. 策略 B: 若边缘断裂严重，采用 Otsu 全局阈值分离浅色纸张与深色桌面背景，再做凸包四边形拟合；
-    4. 选取面积最大且符合非全图边框约束的凸四边形作为文档边界。
+    1. 针对 4K 手机实拍图自动按比例缩放到 max_detect_dim 以内，避免边缘核相对笔画过小并加速 10 倍；
+    2. 灰度化与高斯低通滤波（降噪，去除细碎纹理干扰）；
+    3. 策略 A: Canny 双阈值边缘检测 + 形态学闭运算连接断裂轮廓 + 凸包 Douglas-Peucker 拟合；
+    4. 策略 B: 若边缘断裂严重，采用 Otsu 全局阈值分离浅色纸张与深色桌面背景，再做凸包四边形拟合；
+    5. 选取面积最大且符合非全图边框约束的凸四边形作为文档边界，并还原至输入图像坐标系。
     """
-    h, w = image.shape[:2]
+    orig_h, orig_w = image.shape[:2]
+    scale = 1.0
+    if max(orig_h, orig_w) > max_detect_dim:
+        scale = max_detect_dim / float(max(orig_h, orig_w))
+        work_img = cv2.resize(
+            image,
+            (max(1, int(round(orig_w * scale))), max(1, int(round(orig_h * scale)))),
+            interpolation=cv2.INTER_AREA
+        )
+    else:
+        work_img = image
+
+    h, w = work_img.shape[:2]
     total_area = float(h * w)
     
-    if len(image.shape) == 3:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    if len(work_img.shape) == 3:
+        gray = cv2.cvtColor(work_img, cv2.COLOR_BGR2GRAY)
     else:
-        gray = image.copy()
+        gray = work_img.copy()
         
     # 高斯平滑压制高频网纹与文字内部边缘
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -137,17 +158,17 @@ def detect_document_corners(
     closed = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel, iterations=2)
     contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    pts = _fit_quad_from_contours(contours, total_area, min_area_ratio, w, h, image=image)
+    pts = _fit_quad_from_contours(contours, total_area, min_area_ratio, w, h, image=work_img)
     if pts is not None:
-        return pts
+        return (pts / scale).astype("float32") if scale < 1.0 else pts
 
     # 策略 B: Otsu 亮暗分割提取纸面主体区域（应对强阴影导致局部边缘梯度弱化的情况）
     _, otsu_mask = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     otsu_closed = cv2.morphologyEx(otsu_mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9)))
     contours_b, _ = cv2.findContours(otsu_closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    pts_b = _fit_quad_from_contours(contours_b, total_area, min_area_ratio, w, h, image=image)
+    pts_b = _fit_quad_from_contours(contours_b, total_area, min_area_ratio, w, h, image=work_img)
     if pts_b is not None:
-        return pts_b
+        return (pts_b / scale).astype("float32") if scale < 1.0 else pts_b
 
     return None
 

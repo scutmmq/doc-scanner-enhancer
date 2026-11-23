@@ -1,0 +1,18 @@
+{
+  "name": "DocScanner 智能文档扫描工作台",
+  "short_name": "DocScanner",
+  "description": "手机拍摄文档去阴影、消摩尔纹、去模糊、红章保真与文字提取工作台",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070a10",
+  "theme_color": "#070a10",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

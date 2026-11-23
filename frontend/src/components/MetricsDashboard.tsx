@@ -147,7 +147,8 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
             <button
               onClick={handleCopy}
               disabled={!displayedText}
-              className="flex items-center text-[11px] font-mono px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-medium transition-colors"
+              data-fx-magnet="subtle"
+              className="optical-fx-primary flex items-center text-[11px] font-mono px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white border border-blue-400/40 shadow-sm shadow-blue-600/40 font-medium transition-colors"
             >
               {copied ? (
                 <>
@@ -245,8 +246,9 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
           <button
             onClick={handleExportReport}
             disabled={!metrics}
+            data-fx-magnet="subtle"
             title="导出完整图文与质量分析报告 (.md)"
-            className="flex items-center px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-slate-300 border border-slate-700/80 text-[10px] font-mono transition-colors"
+            className="flex items-center px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-slate-300 border border-slate-700/80 hover:border-blue-500/40 text-[10px] font-mono transition-colors"
           >
             <FileDown className="w-3 h-3 mr-1 text-blue-400" />
             导出报告

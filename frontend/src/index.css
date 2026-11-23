@@ -28,3 +28,150 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #334155;
 }
+
+/* ======================================================
+   全站统一光学硬件级按钮交互特效体系
+   （光标跟踪径向聚光灯 + 斜向激光扫光 + 点击波纹 + 丝滑边框辉光）
+   ====================================================== */
+@keyframes optical-sheen-sweep {
+  0% {
+    transform: translateX(-145%) skewX(-24deg);
+  }
+  100% {
+    transform: translateX(265%) skewX(-24deg);
+  }
+}
+
+@keyframes optical-ripple-expand {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.58;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.35);
+    opacity: 0;
+  }
+}
+
+/* 所有页面常规按钮与可点击光学表面自动接入聚光灯 + 斜向扫光 + 优雅阴影 */
+button:not([data-fx='off']),
+[data-fx-surface]:not([data-fx='off']) {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    border-color 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.22s ease,
+    color 0.2s ease;
+}
+
+/* 光标跟随径向聚光灯 */
+button:not([data-fx='off']):not(:disabled)::before,
+[data-fx-surface]:not([data-fx='off'])::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.26s ease;
+  background: radial-gradient(
+    130px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(96, 165, 250, 0.22),
+    transparent 68%
+  );
+}
+
+button:not([data-fx='off']):not(:disabled):hover::before,
+[data-fx-surface]:not([data-fx='off']):hover::before {
+  opacity: 1;
+}
+
+/* 旗舰主按钮更明亮的镜面聚光 */
+.optical-fx-primary:not(:disabled)::before {
+  background: radial-gradient(
+    155px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(255, 255, 255, 0.28),
+    transparent 68%
+  );
+}
+
+/* 悬停金属斜向扫光 */
+button:not([data-fx='off']):not([data-fx-sheen='off']):not(:disabled)::after,
+[data-fx-surface]:not([data-fx='off'])::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 44%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.14),
+    transparent
+  );
+  transform: translateX(-145%) skewX(-24deg);
+}
+
+.optical-fx-primary:not(:disabled)::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+}
+
+button:not([data-fx='off']):not([data-fx-sheen='off']):not(:disabled):hover::after,
+[data-fx-surface]:not([data-fx='off']):hover::after {
+  animation: optical-sheen-sweep 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* 点击光圈扩散波纹（由 global opticalFx 注入） */
+.optical-btn-ripple {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.45) 0%,
+    rgba(59, 130, 246, 0.16) 54%,
+    transparent 74%
+  );
+  animation: optical-ripple-expand 0.56s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  z-index: 1;
+}
+
+/* 顶部导航悬停激光下划线（禁用斜向扫光，保持导航纯粹精致） */
+.hero-nav-link::after {
+  width: auto !important;
+  height: 1.5px !important;
+  top: auto !important;
+  left: 12% !important;
+  right: 12% !important;
+  bottom: 4px !important;
+  background: linear-gradient(90deg, transparent, #60a5fa, transparent) !important;
+  transform: scaleX(0) !important;
+  transform-origin: center;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: none !important;
+}
+.hero-nav-link:hover::after,
+.hero-nav-link[data-active='true']::after {
+  transform: scaleX(1) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button:not([data-fx='off']):hover::after,
+  [data-fx-surface]:not([data-fx='off']):hover::after {
+    animation: none;
+  }
+  .optical-btn-ripple {
+    animation: none;
+    opacity: 0;
+  }
+}
