@@ -5,7 +5,11 @@
 支持计算 CER (字符错误率)、WER (词/行错误率)、字符识别准确率 (Accuracy) 与平均识别置信度 (Confidence)。
 """
 
+import os
 import re
+import hashlib
+import threading
+from collections import OrderedDict
 from typing import Tuple, Dict, Any, Optional, List
 import numpy as np
 import cv2
@@ -30,26 +34,57 @@ def _normalize_for_eval(text: str) -> str:
 class OCREvaluator:
     """
     OCR 客观识别率评测器。
-    使用单例/按需懒加载避免重复初始化 ONNX 权重。
+    使用单例/按需懒加载 + 内容哈希 LRU 缓存避免重复 ONNX 推理，并针对低核数云服务器优化线程数。
     """
     _ocr_engine = None
+    _engine_lock = threading.Lock()
+    _cache_lock = threading.Lock()
+    _text_cache: "OrderedDict[str, Tuple[str, List[Dict[str, Any]]]]" = OrderedDict()
+    _CACHE_MAX_SIZE = 32
 
     @classmethod
     def get_engine(cls):
         if cls._ocr_engine is None:
-            try:
-                from rapidocr_onnxruntime import RapidOCR
-                cls._ocr_engine = RapidOCR()
-            except Exception as e:
-                print(f"[警告] 初始化 RapidOCR 失败: {e}")
-                cls._ocr_engine = None
+            with cls._engine_lock:
+                if cls._ocr_engine is None:
+                    try:
+                        from rapidocr_onnxruntime import RapidOCR
+
+                        cpu_cnt = os.cpu_count() or 2
+                        default_threads = 1 if cpu_cnt <= 4 else min(4, cpu_cnt // 2)
+                        intra_threads = int(os.environ.get("OCR_INTRA_THREADS", str(default_threads)))
+                        cls._ocr_engine = RapidOCR(
+                            intra_op_num_threads=max(1, intra_threads),
+                            inter_op_num_threads=1,
+                        )
+                    except Exception as e:
+                        print(f"[警告] 初始化 RapidOCR 失败: {e}")
+                        cls._ocr_engine = None
         return cls._ocr_engine
 
+    @staticmethod
+    def _image_cache_key(image: np.ndarray, max_dim: int) -> str:
+        h = hashlib.blake2b(digest_size=16)
+        h.update(f"{image.shape}:{image.dtype}:{max_dim}:".encode("ascii"))
+        h.update(np.ascontiguousarray(image).data)
+        return h.hexdigest()
+
     @classmethod
-    def extract_text(cls, image: np.ndarray) -> Tuple[str, List[Dict[str, Any]]]:
+    def extract_text(
+        cls,
+        image: np.ndarray,
+        max_dim: int = 1280,
+        use_cache: bool = True,
+        target_shape: Optional[Tuple[int, int]] = None,
+    ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         对输入图像进行文字提取。
-        
+
+        参数:
+            image: 输入 BGR/灰度图
+            max_dim: 送入 OCR 推理的长边上限（防止 4K 原图拖慢推理，识别框自动映射回目标坐标）
+            use_cache: 是否启用内容哈希 LRU 缓存（同一张原图多次调参时直接 0ms 命中）
+            target_shape: 若调用方传入的是已缩放图，可指定最终显示图的 (H, W) 将框坐标等比还原
         返回:
             full_text: 合并后的纯文本字符串
             boxes: 包含识别框坐标 [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]、文本和置信度的列表
@@ -58,28 +93,70 @@ class OCREvaluator:
         if engine is None:
             return "", []
 
+        orig_h, orig_w = image.shape[:2]
+        out_h, out_w = target_shape if target_shape is not None else (orig_h, orig_w)
+
+        cache_key = None
+        if use_cache:
+            cache_key = cls._image_cache_key(image, max_dim) + f":{out_h}x{out_w}"
+            with cls._cache_lock:
+                cached = cls._text_cache.get(cache_key)
+                if cached is not None:
+                    cls._text_cache.move_to_end(cache_key)
+                    return cached
+
         if len(image.shape) == 2:
             img_bgr = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
         else:
             img_bgr = image
 
-        result, _ = engine(img_bgr)
+        infer_img = img_bgr
+        if max_dim > 0 and max(orig_h, orig_w) > max_dim:
+            sc = max_dim / float(max(orig_h, orig_w))
+            infer_img = cv2.resize(
+                img_bgr,
+                (max(1, int(round(orig_w * sc))), max(1, int(round(orig_h * sc)))),
+                interpolation=cv2.INTER_AREA,
+            )
+
+        infer_h, infer_w = infer_img.shape[:2]
+        scale_x = out_w / float(max(infer_w, 1))
+        scale_y = out_h / float(max(infer_h, 1))
+
+        result, _ = engine(infer_img, use_cls=False)
         if not result:
-            return "", []
+            empty_res: Tuple[str, List[Dict[str, Any]]] = ("", [])
+            if use_cache and cache_key is not None:
+                with cls._cache_lock:
+                    cls._text_cache[cache_key] = empty_res
+                    while len(cls._text_cache) > cls._CACHE_MAX_SIZE:
+                        cls._text_cache.popitem(last=False)
+            return empty_res
 
         text_lines = []
         boxes_meta = []
         for item in result:
-            box, text, score = item[0], item[1], float(item[2])
+            raw_box, text, score = item[0], item[1], float(item[2])
+            scaled_box = [
+                [round(float(pt[0]) * scale_x, 1), round(float(pt[1]) * scale_y, 1)]
+                for pt in raw_box
+            ]
             text_lines.append(text)
             boxes_meta.append({
-                "box": box,
+                "box": scaled_box,
                 "text": text,
-                "score": round(score, 4)
+                "score": round(score, 4),
+                "confidence": round(score, 4),
             })
 
         full_text = "\n".join(text_lines)
-        return full_text, boxes_meta
+        final_res = (full_text, boxes_meta)
+        if use_cache and cache_key is not None:
+            with cls._cache_lock:
+                cls._text_cache[cache_key] = final_res
+                while len(cls._text_cache) > cls._CACHE_MAX_SIZE:
+                    cls._text_cache.popitem(last=False)
+        return final_res
 
     @staticmethod
     def calculate_text_accuracy(gt_text: str, pred_text: str) -> Dict[str, float]:
@@ -124,20 +201,21 @@ class OCREvaluator:
         cls,
         raw_image: np.ndarray,
         enhanced_image: np.ndarray,
-        ground_truth_text: Optional[str] = None
+        ground_truth_text: Optional[str] = None,
+        cached_enhanced: Optional[Tuple[str, List[Dict[str, Any]]]] = None,
+        enhanced_target_shape: Optional[Tuple[int, int]] = None,
     ) -> Dict[str, Any]:
         """
         对增强前后的图像执行端到端对比评测。
-        
-        参数:
-            raw_image: 拍摄原始图 (手机倾斜/阴影/模糊/摩尔纹/偏色)
-            enhanced_image: 经本系统全流程增强后的图像
-            ground_truth_text: 标准文本真实值 (若有)
-        返回:
-            综合评测对比字典 (包含 OCR 文本、识别率增益、CER/WER、置信度对比)
+        若已提前算出增强图 OCR（cached_enhanced），直接复用，彻底避免重复推理。
         """
         raw_text, raw_boxes = cls.extract_text(raw_image)
-        enhanced_text, enhanced_boxes = cls.extract_text(enhanced_image)
+        if cached_enhanced is not None:
+            enhanced_text, enhanced_boxes = cached_enhanced
+        else:
+            enhanced_text, enhanced_boxes = cls.extract_text(
+                enhanced_image, target_shape=enhanced_target_shape
+            )
 
         raw_conf = float(np.mean([b["score"] for b in raw_boxes])) * 100.0 if raw_boxes else 0.0
         enh_conf = float(np.mean([b["score"] for b in enhanced_boxes])) * 100.0 if enhanced_boxes else 0.0

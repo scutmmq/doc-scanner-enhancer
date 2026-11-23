@@ -123,6 +123,7 @@ export default function App() {
 
   const [params, setParams] = useState<PipelineParams>(DEFAULT_PIPELINE_PARAMS);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isOcrLoading, setIsOcrLoading] = useState<boolean>(false);
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [progressLabel, setProgressLabel] = useState<string>('正在初始化图像管线...');
 
@@ -138,6 +139,13 @@ export default function App() {
   const mobileCameraRef = useRef<HTMLInputElement>(null);
   const sampleMenuRef = useRef<HTMLDivElement>(null);
   const themeMenuRef = useRef<HTMLDivElement>(null);
+  const ocrAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      ocrAbortRef.current?.abort();
+    };
+  }, []);
 
   // 同步当前主题至 HTML 根元素并持久化
   useEffect(() => {
@@ -190,34 +198,73 @@ export default function App() {
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // 应用服务端返回的完整增强结果
-  const applyEnhancePayload = useCallback((data: any, syncAppliedParams: boolean) => {
-    if (!data?.success) return;
-    setRectifiedRawBase64(data.rectified_raw_base64 || null);
-    setFinalImageBase64(data.final_image_base64);
-    setStages(data.stages || []);
-    setActiveStage(null);
-    setActiveDiagKey(null);
-    setDiagnosis(data.diagnosis || null);
-    setMetrics(data.metrics || null);
-    setOcrData(data.ocr || null);
-    setTotalElapsedMs(data.total_elapsed_ms ?? null);
-    if (syncAppliedParams && data.applied_params) {
-      setParams((prev) => ({
-        ...prev,
-        ...data.applied_params,
-        auto_diagnose: false,
-      }));
+  // 后台静默拉取异步 OCR 识别与增强前后准确率对比（绝不阻塞主图展示与调参交互）
+  const triggerDeferredOcr = useCallback(async (jobId: string) => {
+    ocrAbortRef.current?.abort();
+    const controller = new AbortController();
+    ocrAbortRef.current = controller;
+    setIsOcrLoading(true);
+    try {
+      const res = await fetch(`/api/v1/ocr-eval/${encodeURIComponent(jobId)}`, {
+        method: 'POST',
+        signal: controller.signal,
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!controller.signal.aborted && data?.success && data?.ocr) {
+        setOcrData(data.ocr);
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        console.warn('后台 OCR 识别任务未完成:', err);
+      }
+    } finally {
+      if (ocrAbortRef.current === controller) {
+        setIsOcrLoading(false);
+      }
     }
   }, []);
 
-  // 触发后端处理流水线（优先使用 SSE 实时阶段进度流 `/api/v1/enhance-stream`）
+  // 应用服务端返回的完整增强结果
+  const applyEnhancePayload = useCallback(
+    (data: any, syncAppliedParams: boolean) => {
+      if (!data?.success) return;
+      setRectifiedRawBase64(data.rectified_raw_base64 || null);
+      setFinalImageBase64(data.final_image_base64);
+      setStages(data.stages || []);
+      setActiveStage(null);
+      setActiveDiagKey(null);
+      setDiagnosis(data.diagnosis || null);
+      setMetrics(data.metrics || null);
+      setOcrData(data.ocr || null);
+      setTotalElapsedMs(data.total_elapsed_ms ?? null);
+      if (syncAppliedParams && data.applied_params) {
+        setParams((prev) => ({
+          ...prev,
+          ...data.applied_params,
+          auto_diagnose: false,
+        }));
+      }
+      if (data.ocr_job_id) {
+        void triggerDeferredOcr(String(data.ocr_job_id));
+      } else {
+        setIsOcrLoading(false);
+      }
+    },
+    [triggerDeferredOcr]
+  );
+
+  // 触发后端处理流水线（优先使用 SSE 实时阶段进度流 `/api/v1/enhance-stream`，主图与 OCR 异步解耦）
   const triggerEnhance = useCallback(
     async (
       file: File,
       curParams: PipelineParams,
       sampleName: string | null = activeSampleName
     ) => {
+      // 取消前一次尚未跑完的后台 OCR，防止连续调参时堆积服务器 CPU
+      ocrAbortRef.current?.abort();
+      setIsOcrLoading(false);
+
       setIsProcessing(true);
       setProgressPercent(6);
       setProgressLabel('正在上传图像并初始化处理管线...');
@@ -228,7 +275,7 @@ export default function App() {
       try {
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('params_json', JSON.stringify(curParams));
+        formData.append('params_json', JSON.stringify({ ...curParams, defer_ocr: true }));
         if (sampleName) {
           formData.append('sample_name', sampleName);
         }
@@ -402,6 +449,8 @@ export default function App() {
 
   // 清空当前工作区，返回引导首页
   const handleResetWorkspace = () => {
+    ocrAbortRef.current?.abort();
+    setIsOcrLoading(false);
     setRawImageFile(null);
     setRawImageBase64(null);
     setRectifiedRawBase64(null);
@@ -1117,6 +1166,7 @@ export default function App() {
                 ocrText={ocrData?.text || ''}
                 totalElapsedMs={totalElapsedMs}
                 isProcessing={isProcessing}
+                isOcrLoading={isOcrLoading}
                 onUpdateAndApply={handleSimpleUpdateAndApply}
                 onAutoOptimize={handleAutoOptimize}
                 onDownload={handleDownload}
@@ -1185,6 +1235,7 @@ export default function App() {
                       ocrData={ocrData}
                       totalElapsedMs={totalElapsedMs}
                       sampleTitle={activeSampleTitle}
+                      isOcrLoading={isOcrLoading}
                     />
                   ) : (
                     <SamplingLabPanel
@@ -1283,6 +1334,7 @@ export default function App() {
                       ocrData={ocrData}
                       totalElapsedMs={totalElapsedMs}
                       sampleTitle={activeSampleTitle}
+                      isOcrLoading={isOcrLoading}
                     />
                   ) : (
                     <SamplingLabPanel

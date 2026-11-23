@@ -15,6 +15,7 @@ import {
   Download,
   Sliders,
   Wand2,
+  Loader2,
 } from 'lucide-react';
 import { PipelineParams } from './ParameterPanel';
 import { OpticalButton } from './OpticalButton';
@@ -42,6 +43,7 @@ interface SimpleSmartPanelProps {
   ocrText: string;
   totalElapsedMs: number | null;
   isProcessing: boolean;
+  isOcrLoading?: boolean;
   onUpdateAndApply: (patch: Partial<PipelineParams>) => void;
   onAutoOptimize: () => void;
   onDownload: () => void;
@@ -91,6 +93,7 @@ export const SimpleSmartPanel: React.FC<SimpleSmartPanelProps> = ({
   ocrText,
   totalElapsedMs,
   isProcessing,
+  isOcrLoading = false,
   onUpdateAndApply,
   onAutoOptimize,
   onDownload,
@@ -282,13 +285,27 @@ export const SimpleSmartPanel: React.FC<SimpleSmartPanelProps> = ({
         <div className="flex-shrink-0 rounded-xl bg-[#111827] border border-slate-800 p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-200">识别出的文档文字</span>
-            <span className="text-[10px] font-mono text-slate-400 tabular-nums">
-              {ocrText ? `${ocrText.replace(/\s+/g, '').length} 字` : '等待识别'}
-            </span>
+            {isOcrLoading ? (
+              <span className="inline-flex items-center text-[10px] font-mono text-blue-400">
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                后台提取中...
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono text-slate-400 tabular-nums">
+                {ocrText ? `${ocrText.replace(/\s+/g, '').length} 字` : '等待识别'}
+              </span>
+            )}
           </div>
 
           <div className="bg-[#080b12] border border-slate-800/80 rounded-lg p-2.5 text-[11px] font-mono text-slate-300 leading-relaxed overflow-y-auto h-24 whitespace-pre-wrap break-all select-text">
-            {ocrText?.trim() || '当前页面未提取到文字内容，可尝试调整清晰度或切换风格后重试。'}
+            {isOcrLoading && !ocrText?.trim() ? (
+              <span className="text-slate-400 inline-flex items-center">
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin text-blue-400 flex-shrink-0" />
+                高清扫描件已就绪，正在后台静默提取文字（不阻碍看图与调参）...
+              </span>
+            ) : (
+              ocrText?.trim() || '当前页面未提取到文字内容，可尝试调整清晰度或切换风格后重试。'
+            )}
           </div>
         </div>
       </div>

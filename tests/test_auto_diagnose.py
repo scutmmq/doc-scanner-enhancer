@@ -96,18 +96,37 @@ def test_v3_api_diagnose_sse_and_qr_relay():
     diag_codes = {i["code"] for i in r_diag.json()["diagnosis"]["issues"]}
     assert {"skew", "shadow", "moire"}.issubset(diag_codes)
 
-    # 2. SSE 实时进度流式增强接口
+    # 2. SSE 实时进度流式增强接口（含主图/OCR 异步解耦模式）
     r_sse = client.post(
         "/api/v1/enhance-stream",
         data={
             "sample_name": "test1_shadow.png",
-            "params_json": json.dumps({"auto_diagnose": True}),
+            "params_json": json.dumps({"auto_diagnose": True, "defer_ocr": True}),
         },
     )
     assert r_sse.status_code == 200
     assert "text/event-stream" in r_sse.headers.get("content-type", "")
     assert "event: progress" in r_sse.text
     assert "event: result" in r_sse.text
+
+    # 解析 SSE result 并验证后台异步 OCR 接口可无缝回填识别文本与准确率提升
+    result_payload = None
+    for block in r_sse.text.split("\n\n"):
+        if "event: result" in block:
+            for line in block.splitlines():
+                if line.startswith("data:"):
+                    result_payload = json.loads(line[5:].strip())
+    assert result_payload is not None
+    assert result_payload["ocr"]["pending"] is True
+    job_id = result_payload.get("ocr_job_id")
+    assert job_id
+
+    r_ocr = client.post(f"/api/v1/ocr-eval/{job_id}")
+    assert r_ocr.status_code == 200
+    ocr_json = r_ocr.json()
+    assert ocr_json["success"] is True
+    assert ocr_json["ocr"]["pending"] is False
+    assert ocr_json["ocr"]["comparison"] is not None
 
     # 3. 局域网二维码手机拍传接力接口
     r_sess = client.get("/api/v1/capture/new-session")

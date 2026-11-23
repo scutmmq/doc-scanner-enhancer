@@ -5,7 +5,8 @@ import {
   Copy,
   Check,
   Award,
-  FileDown
+  FileDown,
+  Loader2,
 } from 'lucide-react';
 import { copyTextToClipboard } from '../utils/clipboard';
 
@@ -33,6 +34,7 @@ interface MetricsDashboardProps {
   } | null;
   totalElapsedMs?: number | null;
   sampleTitle?: string;
+  isOcrLoading?: boolean;
 }
 
 export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
@@ -40,6 +42,7 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
   ocrData,
   totalElapsedMs,
   sampleTitle = '当前文档',
+  isOcrLoading = false,
 }) => {
   const [copied, setCopied] = useState(false);
   const [textTab, setTextTab] = useState<'enhanced' | 'raw'>('enhanced');
@@ -169,6 +172,11 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
         <div className="flex-1 overflow-y-auto text-[11px] font-mono text-slate-200 whitespace-pre-wrap leading-relaxed select-text bg-[#090c13] p-2.5 rounded border border-slate-800/80">
           {displayedText ? (
             displayedText
+          ) : isOcrLoading ? (
+            <span className="text-blue-400 inline-flex items-center">
+              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin flex-shrink-0" />
+              高清增强图与画质指标已就绪，正在后台异步识别文字并评测 CER/WER 提升...
+            </span>
           ) : (
             <span className="text-slate-500">
               导入文档照片后，将自动提取版面文字并在此处显示，支持一键复制...
@@ -184,7 +192,12 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
             <Award className="w-3.5 h-3.5 text-amber-400 mr-1.5" />
             文字可读性提升对比
           </span>
-          {accComp ? (
+          {isOcrLoading ? (
+            <span className="inline-flex items-center text-[10px] font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/30">
+              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+              后台评测中...
+            </span>
+          ) : accComp ? (
             <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
               +{accComp.accuracy_improvement}% 识别率提升
             </span>
