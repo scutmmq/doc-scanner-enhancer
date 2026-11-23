@@ -72,9 +72,60 @@ const OPTICAL_MODES: Array<{
 ];
 
 /**
+ * 模块级开屏视频探测缓存：
+ * 页面加载即预探测 `/api/v1/health` 并复用单次 Promise 缓存结果，
+ * 无论首次打开还是刷新后点击「重温开屏」，第 0 帧即可直接挂载 <video>，
+ * 彻底消除回退 Canvas 特效短暂闪烁（flash）后再切视频的问题。
+ */
+interface HeroVideoProbe {
+  resolved: boolean;
+  hasHero: boolean;
+  hasMobileHero: boolean;
+}
+
+let cachedHeroVideoProbe: HeroVideoProbe = {
+  resolved: false,
+  hasHero: false,
+  hasMobileHero: false,
+};
+
+let pendingHeroProbe: Promise<HeroVideoProbe> | null = null;
+
+function probeHeroVideo(): Promise<HeroVideoProbe> {
+  if (cachedHeroVideoProbe.resolved) {
+    return Promise.resolve(cachedHeroVideoProbe);
+  }
+  if (!pendingHeroProbe) {
+    pendingHeroProbe = fetch('/api/v1/health')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        cachedHeroVideoProbe = {
+          resolved: true,
+          hasHero: Boolean(data?.has_hero_video),
+          hasMobileHero: Boolean(data?.has_mobile_hero_video),
+        };
+        return cachedHeroVideoProbe;
+      })
+      .catch(() => {
+        cachedHeroVideoProbe = {
+          resolved: true,
+          hasHero: false,
+          hasMobileHero: false,
+        };
+        return cachedHeroVideoProbe;
+      });
+  }
+  return pendingHeroProbe;
+}
+
+if (typeof window !== 'undefined') {
+  void probeHeroVideo();
+}
+
+/**
  * 100vw × 100vh 全屏影院级开屏引导 (MCHOSE / 旗舰硬件发布会风格)
  * - 100% 全出血全屏视频背景（挂载 frontend/public/hero-intro.mp4 即自动生效）
- * - 未放视频时，渲染全屏 100vw × 100vh 低机位斜切光学暗房扫描仪 3D 透视光影 Canvas 动画
+ * - 仅在服务端明确不存在视频文件或视频播放出错时，才启用全屏光学暗房 Canvas 兜底动画
  * - 所有按钮具备磁吸拉拽、光标径向高光跟踪、斜向激光扫光、点击光圈波纹与 GSAP 快门幕布退场特效
  */
 export const HeroIntro: React.FC<HeroIntroProps> = ({
@@ -84,35 +135,49 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bgVideoRef = useRef<HTMLVideoElement>(null);
   const pointerNormXRef = useRef<number | null>(null);
   const activeModeRef = useRef<OpticalModeId>('shadow');
   const isExitingRef = useRef<boolean>(false);
 
-  const [hasHeroVideo, setHasHeroVideo] = useState<boolean>(false);
-  const [hasMobileHeroVideo, setHasMobileHeroVideo] = useState<boolean>(false);
+  const [probeResolved, setProbeResolved] = useState<boolean>(cachedHeroVideoProbe.resolved);
+  const [hasHeroVideo, setHasHeroVideo] = useState<boolean>(cachedHeroVideoProbe.hasHero);
+  const [hasMobileHeroVideo, setHasMobileHeroVideo] = useState<boolean>(
+    cachedHeroVideoProbe.hasMobileHero
+  );
   const [useVideoFallback, setUseVideoFallback] = useState<boolean>(false);
   const [videoReady, setVideoReady] = useState<boolean>(false);
   const [activeMode, setActiveMode] = useState<OpticalModeId>('shadow');
+
+  // 仅当明确确认无视频或视频加载失败时，才渲染兜底 Canvas（加载/缓冲期间保持纯黑影院底，绝不闪出兜底特效）
+  const shouldRenderCanvas =
+    useVideoFallback || (probeResolved && !hasHeroVideo && !hasMobileHeroVideo);
 
   useEffect(() => {
     activeModeRef.current = activeMode;
   }, [activeMode]);
 
-  // 静默检测服务端是否已挂载自定义全屏背景视频 /hero-intro.mp4（及可选竖屏版 /hero-intro-mobile.mp4）
+  // 静默读取已预探测（或正在进行）的开屏视频结果
   useEffect(() => {
+    if (cachedHeroVideoProbe.resolved) return;
     let mounted = true;
-    fetch('/api/v1/health')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!mounted || !data) return;
-        if (data.has_hero_video) setHasHeroVideo(true);
-        if (data.has_mobile_hero_video) setHasMobileHeroVideo(true);
-      })
-      .catch(() => {});
+    probeHeroVideo().then((res) => {
+      if (!mounted) return;
+      setHasHeroVideo(res.hasHero);
+      setHasMobileHeroVideo(res.hasMobileHero);
+      setProbeResolved(true);
+    });
     return () => {
       mounted = false;
     };
   }, []);
+
+  // 若视频命中浏览器缓存已就绪，首帧立即置为可见
+  useEffect(() => {
+    if (bgVideoRef.current && bgVideoRef.current.readyState >= 2) {
+      setVideoReady(true);
+    }
+  }, [hasHeroVideo]);
 
   // GSAP 旗舰发布会开屏入场时间轴
   const { contextSafe } = useGSAP(
@@ -185,9 +250,9 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
     );
   });
 
-  // 全屏 100vw × 100vh 影院级低机位斜切光学暗房扫描背景引擎
+  // 全屏 100vw × 100vh 影院级低机位斜切光学暗房扫描背景引擎（仅在确认无视频或视频失败时启动）
   useEffect(() => {
-    if (hasHeroVideo && videoReady && !useVideoFallback) return;
+    if (!shouldRenderCanvas) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -476,7 +541,7 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
       cancelAnimationFrame(rafId);
       window.removeEventListener('resize', resize);
     };
-  }, [hasHeroVideo, videoReady, useVideoFallback]);
+  }, [shouldRenderCanvas]);
 
   const handleStagePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const norm = e.clientX / Math.max(window.innerWidth, 1);
@@ -501,14 +566,17 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
       ================================================================ */}
       {hasHeroVideo && !useVideoFallback && (
         <video
+          ref={bgVideoRef}
           src="/hero-intro.mp4"
+          preload="auto"
           autoPlay
           muted
           loop
           playsInline
+          onLoadedData={() => setVideoReady(true)}
           onCanPlay={() => setVideoReady(true)}
           onError={() => setUseVideoFallback(true)}
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
             hasMobileHeroVideo
               ? 'hidden md:block'
               : 'blur-2xl scale-125 opacity-45 md:blur-none md:scale-100 md:opacity-100'
@@ -519,17 +587,19 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
       {hasMobileHeroVideo && !useVideoFallback && (
         <video
           src="/hero-intro-mobile.mp4"
+          preload="auto"
           autoPlay
           muted
           loop
           playsInline
+          onLoadedData={() => setVideoReady(true)}
           onCanPlay={() => setVideoReady(true)}
           onError={() => setHasMobileHeroVideo(false)}
           className="md:hidden absolute inset-0 w-full h-full object-cover"
         />
       )}
 
-      {(!hasHeroVideo || !videoReady || useVideoFallback) && (
+      {shouldRenderCanvas && (
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full block"
@@ -577,7 +647,7 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
           </nav>
 
           <div className="flex items-center space-x-2.5">
-            {hasHeroVideo && videoReady && !useVideoFallback && (
+            {hasHeroVideo && !useVideoFallback && (
               <span className="hidden sm:inline-flex items-center text-[11px] font-mono text-slate-300/80 px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
                 <VolumeX className="w-3 h-3 mr-1" /> 静音预览
               </span>
@@ -616,6 +686,7 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
                 <div className="relative w-full aspect-video rounded-2xl overflow-hidden border border-white/20 bg-black/50 shadow-[0_18px_48px_-12px_rgba(37,99,235,0.5)]">
                   <video
                     src="/hero-intro.mp4"
+                    preload="auto"
                     autoPlay
                     muted
                     loop
@@ -707,7 +778,7 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
               style={{ backgroundColor: currentModeObj.beamHex }}
             />
             <span>
-              {hasHeroVideo && videoReady && !useVideoFallback
+              {hasHeroVideo && !useVideoFallback
                 ? '4K CINEMA LOOP · HERO-INTRO.MP4'
                 : '左右移动光标可实时牵引全屏光学激光束'}
             </span>
