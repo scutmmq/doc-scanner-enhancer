@@ -16,6 +16,7 @@ import {
   Play,
   Camera,
   Wand2,
+  Menu,
 } from 'lucide-react';
 import { DarkroomViewer } from './components/DarkroomViewer';
 import {
@@ -31,6 +32,7 @@ import { PhoneRelayModal } from './components/PhoneRelayModal';
 import { MobileCaptureView } from './components/MobileCaptureView';
 import { SimpleSmartPanel, DiagnosisReport } from './components/SimpleSmartPanel';
 import { OpticalButton } from './components/OpticalButton';
+import { MobileMenuDrawer } from './components/MobileMenuDrawer';
 
 interface SampleMeta {
   filename: string;
@@ -90,6 +92,13 @@ export default function App() {
 
   // 手机扫码拍传弹窗开关
   const [showPhoneModal, setShowPhoneModal] = useState<boolean>(false);
+
+  // 移动端全功能抽屉菜单、顶部预览视窗展开态、专业视图 5 分栏 Tab（仅 < lg 移动端生效，不影响 PC 端）
+  const [showMobileMenu, setShowMobileMenu] = useState<boolean>(false);
+  const [mobileViewerExpanded, setMobileViewerExpanded] = useState<boolean>(false);
+  const [mobileExpertTab, setMobileExpertTab] = useState<
+    'presets' | 'tune' | 'stages' | 'metrics' | 'sampling'
+  >('tune');
 
   // 工作台双模式：默认 'simple' (极简智能模式，新手零负担)，可一键切至 'expert' (专业视图，完整 7 阶段与调参)
   const [workspaceMode, setWorkspaceMode] = useState<'simple' | 'expert'>('simple');
@@ -406,6 +415,7 @@ export default function App() {
     setSweepData(null);
     setActiveSampleName(null);
     setErrorMessage(null);
+    setMobileViewerExpanded(false);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -566,13 +576,8 @@ export default function App() {
   const currentThemeMeta = STUDIO_THEMES.find((t) => t.id === uiTheme) || STUDIO_THEMES[0];
 
   return (
-    <div
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className="ds-workbench-shell flex flex-col min-h-screen lg:h-screen w-full bg-[#070a10] text-slate-100 font-sans lg:overflow-hidden relative"
-    >
-      {/* 首次进入全屏光学暗房开屏引导（随时可在顶栏点击「重温开屏」重播） */}
+    <>
+      {/* 首次进入全屏光学暗房开屏引导（独立于工作台主题容器外，确保日间宣纸模式下重温开屏也保持纯正暗房质感） */}
       {showHero && (
         <HeroIntro
           onEnterWorkbench={dismissHero}
@@ -587,11 +592,43 @@ export default function App() {
         />
       )}
 
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`ds-workbench-shell flex flex-col w-full bg-[#070a10] text-slate-100 font-sans relative ${
+          rawImageBase64
+            ? 'h-[100dvh] overflow-hidden lg:h-screen lg:overflow-hidden'
+            : 'min-h-screen lg:h-screen lg:overflow-hidden'
+        }`}
+      >
+
       {/* 手机扫码无线拍传弹窗 */}
       <PhoneRelayModal
         isOpen={showPhoneModal}
         onClose={() => setShowPhoneModal(false)}
         onPhotoReceived={loadUserFile}
+      />
+
+      {/* 移动端全功能底部抽屉菜单（仅 < lg 显示，100% 补齐桌面端所有顶栏入口） */}
+      <MobileMenuDrawer
+        isOpen={showMobileMenu}
+        onClose={() => setShowMobileMenu(false)}
+        hasDocument={Boolean(rawImageBase64)}
+        themes={STUDIO_THEMES}
+        currentTheme={uiTheme}
+        onSelectTheme={(theme) => setUiTheme(theme)}
+        samples={samples}
+        activeSampleName={activeSampleName}
+        onSelectSample={(s) => {
+          const full = samples.find((item) => item.filename === s.filename);
+          if (full) handleSelectSample(full);
+        }}
+        onCameraCapture={() => mobileCameraRef.current?.click()}
+        onUploadFile={() => fileInputRef.current?.click()}
+        onOpenPhoneRelay={() => setShowPhoneModal(true)}
+        onReplayHero={() => setShowHero(true)}
+        onResetWorkspace={handleResetWorkspace}
       />
 
       {/* 拖拽文件全屏高亮提示层 */}
@@ -692,8 +729,8 @@ export default function App() {
             </button>
           </div>
 
-          {/* 主题外观一键切换（暗房光学 / 宣纸晴空 / 徕卡暖金） */}
-          <div ref={themeMenuRef} className="relative flex-shrink-0">
+          {/* 主题外观一键切换（桌面端顶栏下拉；移动端收纳至底部抽屉菜单） */}
+          <div ref={themeMenuRef} className="hidden lg:block relative flex-shrink-0">
             <button
               onClick={() => setShowThemeMenu((v) => !v)}
               data-fx-magnet="subtle"
@@ -761,31 +798,31 @@ export default function App() {
             )}
           </div>
 
-          {/* 手机扫码无线拍传（仅桌面端展示；手机端直接在本地拍照上传） */}
+          {/* 手机扫码无线拍传（桌面端顶栏按钮；移动端收纳至底部抽屉菜单） */}
           <button
             onClick={() => setShowPhoneModal(true)}
             data-fx-magnet="subtle"
-            className="hidden sm:flex items-center px-3 py-1.5 rounded-lg bg-[#121826] hover:bg-[#192338] text-slate-200 border border-slate-800 hover:border-amber-400/40 text-xs transition-colors flex-shrink-0"
+            className="hidden lg:flex items-center px-3 py-1.5 rounded-lg bg-[#121826] hover:bg-[#192338] text-slate-200 border border-slate-800 hover:border-amber-400/40 text-xs transition-colors flex-shrink-0"
             title="用手机扫码直接拍照传到电脑工作台"
           >
             <QrCode className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
             <span>手机拍传</span>
           </button>
 
-          {/* 重温开屏动画按钮 */}
+          {/* 重温开屏动画按钮（桌面端顶栏按钮；移动端收纳至底部抽屉菜单） */}
           <button
             onClick={() => setShowHero(true)}
             data-fx-magnet="subtle"
-            className="hidden md:flex items-center px-2.5 py-1.5 rounded-lg bg-[#121826] hover:bg-[#182033] text-slate-300 border border-slate-800 hover:border-blue-400/40 text-xs transition-colors flex-shrink-0"
+            className="hidden lg:flex items-center px-2.5 py-1.5 rounded-lg bg-[#121826] hover:bg-[#182033] text-slate-300 border border-slate-800 hover:border-blue-400/40 text-xs transition-colors flex-shrink-0"
             title="重温光学暗房开屏演示动画"
           >
             <Play className="w-3 h-3 mr-1.5 text-blue-400" />
             <span>重温开屏</span>
           </button>
 
-          {/* 示例图库下拉菜单（移动端有图时显示精简图标，无图时下方已有样张网格直接点击） */}
+          {/* 示例图库下拉菜单（桌面端顶栏下拉；移动端收纳至底部抽屉菜单） */}
           {samples.length > 0 && (
-            <div ref={sampleMenuRef} className={`relative flex-shrink-0 ${rawImageBase64 ? 'block' : 'hidden sm:block'}`}>
+            <div ref={sampleMenuRef} className="hidden lg:block relative flex-shrink-0">
               <button
                 onClick={() => setShowSampleMenu((v) => !v)}
                 disabled={isProcessing}
@@ -829,12 +866,12 @@ export default function App() {
             </div>
           )}
 
-          {/* 展开/收起底部流程栏开关（仅专业视图下显示） */}
+          {/* 展开/收起底部流程栏开关（仅桌面端专业视图下显示） */}
           {workspaceMode === 'expert' && rawImageBase64 && stages.length > 0 && (
             <button
               onClick={() => setShowStageBar((v) => !v)}
               data-fx-magnet="subtle"
-              className={`hidden sm:flex items-center px-3 py-1.5 rounded-lg border text-xs transition-colors flex-shrink-0 ${
+              className={`hidden lg:flex items-center px-3 py-1.5 rounded-lg border text-xs transition-colors flex-shrink-0 ${
                 showStageBar
                   ? 'bg-slate-800/80 border-slate-700 text-slate-200'
                   : 'bg-[#121826] border-slate-800 text-slate-400 hover:text-slate-200'
@@ -846,19 +883,33 @@ export default function App() {
             </button>
           )}
 
-          {/* 上传新照片按钮 */}
+          {/* 上传新照片按钮（桌面端顶栏；移动端在抽屉菜单中与拍照并列展示） */}
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isProcessing}
             data-fx-magnet="subtle"
             aria-label={rawImageBase64 ? '更换文档图片' : '上传文档图片'}
-            className="min-h-[38px] sm:min-h-[34px] flex items-center px-2.5 sm:px-3 py-1.5 rounded-lg bg-[#161f33] hover:bg-[#1e2a45] text-slate-200 border border-slate-700/80 hover:border-blue-400/50 text-xs font-medium transition-all flex-shrink-0"
+            className="hidden lg:flex min-h-[34px] items-center px-3 py-1.5 rounded-lg bg-[#161f33] hover:bg-[#1e2a45] text-slate-200 border border-slate-700/80 hover:border-blue-400/50 text-xs font-medium transition-all flex-shrink-0"
           >
-            <Upload className="w-3.5 h-3.5 sm:mr-1.5 text-blue-400" />
-            <span className="hidden sm:inline">{rawImageBase64 ? '更换图片' : '上传图片'}</span>
+            <Upload className="w-3.5 h-3.5 mr-1.5 text-blue-400" />
+            <span>{rawImageBase64 ? '更换图片' : '上传图片'}</span>
           </button>
 
-          {/* 导出高清图按钮 */}
+          {/* 移动端无图时的快捷直拍按钮（< lg 显示） */}
+          {!rawImageBase64 && (
+            <button
+              type="button"
+              onClick={() => mobileCameraRef.current?.click()}
+              disabled={isProcessing}
+              aria-label="调用相机直接拍照"
+              className="flex lg:hidden min-h-[38px] items-center px-2.5 py-1.5 rounded-lg bg-blue-600 text-white ds-keep-white text-xs font-semibold flex-shrink-0"
+            >
+              <Camera className="w-3.5 h-3.5 mr-1" />
+              <span>拍照</span>
+            </button>
+          )}
+
+          {/* 导出高清图按钮（PC 与移动端有图时均常驻） */}
           {rawImageBase64 && (
             <OpticalButton
               variant="pill"
@@ -866,12 +917,24 @@ export default function App() {
               onClick={handleDownload}
               disabled={!finalImageBase64}
               aria-label="导出高清扫描件"
-              className="min-h-[38px] sm:min-h-[34px] px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-medium flex-shrink-0"
+              className="min-h-[38px] lg:min-h-[34px] px-2.5 lg:px-3.5 py-1.5 rounded-lg text-xs font-medium flex-shrink-0"
             >
-              <Download className="w-3.5 h-3.5 sm:mr-1.5" />
-              <span className="hidden sm:inline">导出图片</span>
+              <Download className="w-3.5 h-3.5 mr-1 lg:mr-1.5" />
+              <span className="lg:hidden">导出</span>
+              <span className="hidden lg:inline">导出图片</span>
             </OpticalButton>
           )}
+
+          {/* 移动端全功能菜单入口按钮（仅 < lg 显示） */}
+          <button
+            type="button"
+            onClick={() => setShowMobileMenu(true)}
+            aria-label="打开完整功能菜单"
+            className="flex lg:hidden min-h-[38px] items-center px-2.5 py-1.5 rounded-lg bg-[#121826] hover:bg-[#192338] text-slate-200 border border-slate-700/90 text-xs font-medium space-x-1 flex-shrink-0"
+          >
+            <Menu className="w-4 h-4 text-blue-400" />
+            <span>菜单</span>
+          </button>
         </div>
       </header>
 
@@ -1003,11 +1066,17 @@ export default function App() {
       ) : (
         /* ====================================================================
             状态 B：已载入图片时的响应式双模式工作台（极简模式 / 专业视图）
+            - PC 端 (lg+)：完整保持原有左右双栏 + 底部横向步骤拆解栏，零视觉变动
+            - 移动端 (< lg)：顶部固定吸顶实时对比视窗 (43dvh / 可展开至 66dvh) + 下方独立分栏控制坞
         ==================================================================== */
-        <div className="flex-1 flex flex-col lg:flex-row lg:overflow-hidden p-2.5 gap-2.5">
-          {/* 左侧：主对比视窗 + 专业视图可折叠处理步骤栏 */}
-          <div className="flex-1 flex flex-col gap-2.5 min-h-[52vh] lg:min-h-0 lg:overflow-hidden">
-            <div className="flex-1 overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden p-2 lg:p-2.5 gap-2 lg:gap-2.5">
+          {/* 左侧（移动端为顶部吸顶）：主对比视窗 + PC 端可折叠底部步骤栏 */}
+          <div
+            className={`flex-shrink-0 lg:flex-shrink lg:flex-1 flex flex-col gap-2.5 overflow-hidden transition-[height] duration-300 ${
+              mobileViewerExpanded ? 'h-[66dvh]' : 'h-[43dvh]'
+            } lg:h-auto lg:min-h-0`}
+          >
+            <div className="flex-1 min-h-0 overflow-hidden">
               <DarkroomViewer
                 originalImage={rawImageBase64}
                 rectifiedOriginalImage={rectifiedRawBase64}
@@ -1017,14 +1086,17 @@ export default function App() {
                 isProcessing={isProcessing}
                 progressPercent={progressPercent}
                 progressLabel={progressLabel}
+                mobileExpanded={mobileViewerExpanded}
+                onToggleMobileExpand={() => setMobileViewerExpanded((v) => !v)}
                 ocrBoxes={ocrData?.boxes || []}
                 detectedCorners={detectedCorners}
                 onApplyManualCorners={handleApplyManualCorners}
               />
             </div>
 
+            {/* 桌面端底部横向步骤拆解栏（仅 lg+ 显示，移动端收编至下方「步骤」分栏） */}
             {workspaceMode === 'expert' && showStageBar && stages.length > 0 && (
-              <div className="h-[156px] flex-shrink-0">
+              <div className="hidden lg:block h-[156px] flex-shrink-0">
                 <StageStepper
                   stages={stages}
                   currentStageId={activeStage ? activeStage.stage_id : null}
@@ -1036,9 +1108,9 @@ export default function App() {
             )}
           </div>
 
-          {/* 右侧：极简智能面板 OR 专业 3-Tab 调参评测面板 */}
+          {/* 右侧（移动端为底部独立滚动坞）：极简智能面板 OR 专业调参评测面板 */}
           {workspaceMode === 'simple' ? (
-            <div className="w-full lg:w-[390px] flex flex-col flex-shrink-0 shadow-2xl lg:overflow-hidden">
+            <div className="flex-1 min-h-0 w-full lg:flex-none lg:w-[390px] flex flex-col shadow-2xl overflow-hidden">
               <SimpleSmartPanel
                 params={params}
                 diagnosis={diagnosis}
@@ -1052,81 +1124,183 @@ export default function App() {
               />
             </div>
           ) : (
-            <div className="w-full lg:w-[410px] flex flex-col bg-[#0d121d] rounded-xl border border-slate-800 overflow-hidden flex-shrink-0 shadow-2xl">
-              <div className="grid grid-cols-3 p-1 bg-[#121826] border-b border-slate-800 select-none gap-1">
-                <button
-                  onClick={() => setRightTab('params')}
-                  className={`py-2 text-[11px] font-mono font-medium rounded-lg flex items-center justify-center transition-colors ${
-                    rightTab === 'params'
-                      ? 'bg-blue-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Sliders className="w-3.5 h-3.5 mr-1" />
-                  增强与调参
-                </button>
-                <button
-                  onClick={() => setRightTab('metrics')}
-                  className={`py-2 text-[11px] font-mono font-medium rounded-lg flex items-center justify-center transition-colors ${
-                    rightTab === 'metrics'
-                      ? 'bg-blue-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <FileText className="w-3.5 h-3.5 mr-1" />
-                  文字与画质
-                </button>
-                <button
-                  onClick={() => setRightTab('sampling')}
-                  className={`py-2 text-[11px] font-mono font-medium rounded-lg flex items-center justify-center transition-colors ${
-                    rightTab === 'sampling'
-                      ? 'bg-blue-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Grid className="w-3.5 h-3.5 mr-1" />
-                  分辨率工具
-                </button>
+            <>
+              {/* PC 端原有 3-Tab 专业视图右侧栏（lg+ 原样保留，零改动） */}
+              <div className="hidden lg:flex w-[410px] flex-col bg-[#0d121d] rounded-xl border border-slate-800 overflow-hidden flex-shrink-0 shadow-2xl">
+                <div className="grid grid-cols-3 p-1 bg-[#121826] border-b border-slate-800 select-none gap-1">
+                  <button
+                    onClick={() => setRightTab('params')}
+                    className={`py-2 text-[11px] font-mono font-medium rounded-lg flex items-center justify-center transition-colors ${
+                      rightTab === 'params'
+                        ? 'bg-blue-600 text-white shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Sliders className="w-3.5 h-3.5 mr-1" />
+                    增强与调参
+                  </button>
+                  <button
+                    onClick={() => setRightTab('metrics')}
+                    className={`py-2 text-[11px] font-mono font-medium rounded-lg flex items-center justify-center transition-colors ${
+                      rightTab === 'metrics'
+                        ? 'bg-blue-600 text-white shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5 mr-1" />
+                    文字与画质
+                  </button>
+                  <button
+                    onClick={() => setRightTab('sampling')}
+                    className={`py-2 text-[11px] font-mono font-medium rounded-lg flex items-center justify-center transition-colors ${
+                      rightTab === 'sampling'
+                        ? 'bg-blue-600 text-white shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Grid className="w-3.5 h-3.5 mr-1" />
+                    分辨率工具
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-hidden p-2">
+                  {rightTab === 'params' ? (
+                    <ParameterPanel
+                      params={params}
+                      onChange={setParams}
+                      onApply={(overrideParams) => {
+                        const targetParams = {
+                          ...(overrideParams || params),
+                          auto_diagnose: false,
+                        };
+                        if (rawImageFile) {
+                          triggerEnhance(rawImageFile, targetParams, activeSampleName);
+                        }
+                      }}
+                      isProcessing={isProcessing}
+                    />
+                  ) : rightTab === 'metrics' ? (
+                    <MetricsDashboard
+                      metrics={metrics}
+                      ocrData={ocrData}
+                      totalElapsedMs={totalElapsedMs}
+                      sampleTitle={activeSampleTitle}
+                    />
+                  ) : (
+                    <SamplingLabPanel
+                      samplingScale={params.sampling_scale}
+                      quantizationBits={params.quantization_bits}
+                      onUpdateSim={handleUpdateSim}
+                      onRunSweep={handleRunSweep}
+                      sweepData={sweepData}
+                      isSweepLoading={isSweepLoading}
+                    />
+                  )}
+                </div>
               </div>
 
-              <div className="flex-1 overflow-hidden p-2">
-                {rightTab === 'params' ? (
-                  <ParameterPanel
-                    params={params}
-                    onChange={setParams}
-                    onApply={(overrideParams) => {
-                      const targetParams = {
-                        ...(overrideParams || params),
-                        auto_diagnose: false,
-                      };
-                      if (rawImageFile) {
-                        triggerEnhance(rawImageFile, targetParams, activeSampleName);
-                      }
-                    }}
-                    isProcessing={isProcessing}
-                  />
-                ) : rightTab === 'metrics' ? (
-                  <MetricsDashboard
-                    metrics={metrics}
-                    ocrData={ocrData}
-                    totalElapsedMs={totalElapsedMs}
-                    sampleTitle={activeSampleTitle}
-                  />
-                ) : (
-                  <SamplingLabPanel
-                    samplingScale={params.sampling_scale}
-                    quantizationBits={params.quantization_bits}
-                    onUpdateSim={handleUpdateSim}
-                    onRunSweep={handleRunSweep}
-                    sweepData={sweepData}
-                    isSweepLoading={isSweepLoading}
-                  />
-                )}
+              {/* 移动端专属 5-Tab 分阶段专业控制坞（仅 < lg 显示，上方对比图始终锁定可见） */}
+              <div className="flex lg:hidden flex-1 min-h-0 w-full flex-col bg-[#0d121d] rounded-xl border border-slate-800 overflow-hidden shadow-2xl">
+                <div className="grid grid-cols-5 p-1 bg-[#121826] border-b border-slate-800 select-none gap-1 flex-shrink-0">
+                  {(
+                    [
+                      { id: 'presets', label: '预设' },
+                      { id: 'tune', label: '精调' },
+                      { id: 'stages', label: '步骤' },
+                      { id: 'metrics', label: '画质' },
+                      { id: 'sampling', label: '分辨率' },
+                    ] as const
+                  ).map((tab) => {
+                    const active = mobileExpertTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setMobileExpertTab(tab.id)}
+                        className={`min-h-[36px] text-[11px] font-medium rounded-lg flex items-center justify-center transition-colors ${
+                          active
+                            ? 'bg-blue-600 text-white ds-keep-white font-semibold shadow'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-hidden p-1.5">
+                  {mobileExpertTab === 'presets' ? (
+                    <ParameterPanel
+                      mobileSection="presets"
+                      params={params}
+                      onChange={setParams}
+                      onApply={(overrideParams) => {
+                        const targetParams = {
+                          ...(overrideParams || params),
+                          auto_diagnose: false,
+                        };
+                        if (rawImageFile) {
+                          triggerEnhance(rawImageFile, targetParams, activeSampleName);
+                        }
+                      }}
+                      isProcessing={isProcessing}
+                    />
+                  ) : mobileExpertTab === 'tune' ? (
+                    <ParameterPanel
+                      mobileSection="tune"
+                      params={params}
+                      onChange={setParams}
+                      onApply={(overrideParams) => {
+                        const targetParams = {
+                          ...(overrideParams || params),
+                          auto_diagnose: false,
+                        };
+                        if (rawImageFile) {
+                          triggerEnhance(rawImageFile, targetParams, activeSampleName);
+                        }
+                      }}
+                      isProcessing={isProcessing}
+                    />
+                  ) : mobileExpertTab === 'stages' ? (
+                    stages.length > 0 ? (
+                      <StageStepper
+                        layout="vertical"
+                        stages={stages}
+                        currentStageId={activeStage ? activeStage.stage_id : null}
+                        onSelectStage={setActiveStage}
+                        selectedDiagKey={activeDiagKey}
+                        onSelectDiag={setActiveDiagKey}
+                      />
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-xs text-slate-500">
+                        处理完成后可在此逐阶段检视中间结果与频谱图
+                      </div>
+                    )
+                  ) : mobileExpertTab === 'metrics' ? (
+                    <MetricsDashboard
+                      metrics={metrics}
+                      ocrData={ocrData}
+                      totalElapsedMs={totalElapsedMs}
+                      sampleTitle={activeSampleTitle}
+                    />
+                  ) : (
+                    <SamplingLabPanel
+                      samplingScale={params.sampling_scale}
+                      quantizationBits={params.quantization_bits}
+                      onUpdateSim={handleUpdateSim}
+                      onRunSweep={handleRunSweep}
+                      sweepData={sweepData}
+                      isSweepLoading={isSweepLoading}
+                    />
+                  )}
+                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

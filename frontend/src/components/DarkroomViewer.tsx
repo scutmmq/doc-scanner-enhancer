@@ -9,7 +9,9 @@ import {
   Crop,
   Check,
   X,
-  Loader2
+  Loader2,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 
 interface DarkroomViewerProps {
@@ -21,6 +23,8 @@ interface DarkroomViewerProps {
   isProcessing?: boolean;
   progressPercent?: number;
   progressLabel?: string;
+  mobileExpanded?: boolean;
+  onToggleMobileExpand?: () => void;
   ocrBoxes?: Array<{
     box: number[][];
     text: string;
@@ -39,6 +43,8 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
   isProcessing = false,
   progressPercent = 0,
   progressLabel = '正在执行传统数字图像增强管线...',
+  mobileExpanded = false,
+  onToggleMobileExpand,
   ocrBoxes = [],
   detectedCorners = null,
   onApplyManualCorners,
@@ -167,15 +173,37 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
     <div className="flex flex-col h-full bg-[#0d121d] rounded-xl border border-slate-800 overflow-hidden shadow-2xl relative">
       {/* 顶部状态与工具栏（移动端单行横向可滑胶囊，杜绝竖排换行） */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-3 sm:px-4 py-2 bg-[#121826] border-b border-slate-800 text-xs font-mono select-none gap-2">
-        <div className="flex items-center space-x-2.5 min-w-0">
-          <span className="flex items-center text-slate-400 truncate">
-            <span className="w-2 h-2 rounded-full bg-blue-500 mr-2 animate-pulse flex-shrink-0"></span>
-            当前检视: <span className="text-slate-100 ml-1.5 font-semibold truncate">{stageName}</span>
-          </span>
-          {origSize.w > 0 && (
-            <span className="text-[10px] text-slate-500 hidden md:inline tabular-nums flex-shrink-0">
-              [{procSize.w}×{procSize.h} px]
+        <div className="flex items-center justify-between space-x-2.5 min-w-0">
+          <div className="flex items-center space-x-2.5 min-w-0">
+            <span className="flex items-center text-slate-400 truncate">
+              <span className="w-2 h-2 rounded-full bg-blue-500 mr-2 animate-pulse flex-shrink-0"></span>
+              当前检视: <span className="text-slate-100 ml-1.5 font-semibold truncate">{stageName}</span>
             </span>
+            {origSize.w > 0 && (
+              <span className="text-[10px] text-slate-500 hidden md:inline tabular-nums flex-shrink-0">
+                [{procSize.w}×{procSize.h} px]
+              </span>
+            )}
+          </div>
+
+          {/* 移动端专属：一键展开/收起固定预览视窗高度 */}
+          {onToggleMobileExpand && (
+            <button
+              type="button"
+              onClick={onToggleMobileExpand}
+              className="lg:hidden flex items-center px-2 py-1 rounded-md bg-slate-900 border border-slate-700/80 text-[10px] text-slate-200 whitespace-nowrap flex-shrink-0"
+              aria-label={mobileExpanded ? '收起预览视窗' : '放大预览视窗'}
+            >
+              {mobileExpanded ? (
+                <>
+                  <Minimize2 className="w-3 h-3 mr-1 text-blue-400" /> 收起
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-3 h-3 mr-1 text-blue-400" /> 放大看图
+                </>
+              )}
+            </button>
           )}
         </div>
 
@@ -499,8 +527,15 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
               </svg>
             )}
 
-            <span className="absolute bottom-3 right-3 px-2.5 py-1 bg-blue-600/90 backdrop-blur rounded text-[11px] text-white font-mono z-10 shadow">
-              {isDiagnosticView ? stageName : '增强后 (After)'}
+            <span className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 px-1.5 py-0.5 sm:px-2.5 sm:py-1 bg-blue-600/90 backdrop-blur rounded text-[10px] sm:text-[11px] text-white font-mono z-10 shadow max-w-[85%] truncate">
+              {isDiagnosticView ? (
+                stageName
+              ) : (
+                <>
+                  <span className="sm:hidden">增强后</span>
+                  <span className="hidden sm:inline">增强后 (After)</span>
+                </>
+              )}
             </span>
 
             {/* 左侧裁切层：原始/透视对齐后退化图 (Before) —— 仅在非独立诊断图时启用滑块叠加 */}
@@ -520,8 +555,9 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
                   }}
                   className="w-full h-full object-contain pointer-events-none block select-none"
                 />
-                <span className="ds-keep-white absolute bottom-3 left-3 px-2.5 py-1 bg-black/80 backdrop-blur rounded text-[11px] text-white font-mono border border-slate-700">
-                  修复前 (Before)
+                <span className="ds-keep-white absolute bottom-2 left-2 sm:bottom-3 sm:left-3 px-1.5 py-0.5 sm:px-2.5 sm:py-1 bg-black/80 backdrop-blur rounded text-[10px] sm:text-[11px] text-white font-mono border border-slate-700">
+                  <span className="sm:hidden">原图</span>
+                  <span className="hidden sm:inline">修复前 (Before)</span>
                 </span>
               </div>
             )}

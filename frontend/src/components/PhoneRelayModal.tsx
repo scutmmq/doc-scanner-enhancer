@@ -9,6 +9,7 @@ import {
   Loader2,
   Smartphone,
 } from 'lucide-react';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 interface PhoneRelayModalProps {
   isOpen: boolean;
@@ -101,14 +102,18 @@ export const PhoneRelayModal: React.FC<PhoneRelayModalProps> = ({
 
   const handleCopyUrl = async () => {
     if (!session?.capture_url) return;
-    try {
-      await navigator.clipboard.writeText(session.capture_url);
+    const ok = await copyTextToClipboard(session.capture_url);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
-    } catch {
-      // ignore clipboard errors
     }
   };
+
+  const isLocalHost =
+    session?.lan_ip?.startsWith('192.168.') ||
+    session?.lan_ip?.startsWith('10.') ||
+    session?.lan_ip?.startsWith('172.') ||
+    session?.lan_ip === '127.0.0.1';
 
   return (
     <div
@@ -125,7 +130,7 @@ export const PhoneRelayModal: React.FC<PhoneRelayModalProps> = ({
             <QrCode className="w-5 h-5 text-amber-400" />
             <div>
               <h2 className="text-sm font-bold text-white">手机扫码无线拍传</h2>
-              <p className="text-[11px] text-slate-400">无需安装 App，同一 Wi-Fi 下手机拍照秒传电脑</p>
+              <p className="text-[11px] text-slate-400">无需安装 App，手机扫码拍照或选图秒传电脑</p>
             </div>
           </div>
           <button
@@ -188,7 +193,7 @@ export const PhoneRelayModal: React.FC<PhoneRelayModalProps> = ({
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span className="flex items-center">
                     <Wifi className="w-3.5 h-3.5 mr-1.5 text-blue-400" />
-                    当前局域网地址 ({session.lan_ip})
+                    {isLocalHost ? `当前局域网地址 (${session.lan_ip})` : `当前公网扫码地址 (${session.lan_ip})`}
                   </span>
                   <button
                     onClick={createSession}
@@ -199,9 +204,14 @@ export const PhoneRelayModal: React.FC<PhoneRelayModalProps> = ({
                   </button>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <code className="flex-1 text-[11px] font-mono text-slate-300 bg-slate-900/90 px-2.5 py-2 rounded-lg border border-slate-800 truncate">
-                    {session.capture_url}
-                  </code>
+                  <input
+                    type="text"
+                    readOnly
+                    value={session.capture_url}
+                    onFocus={(e) => e.currentTarget.select()}
+                    aria-label="手机扫码拍传链接"
+                    className="flex-1 text-[11px] font-mono text-slate-300 bg-slate-900/90 px-2.5 py-2 rounded-lg border border-slate-800 truncate outline-none focus:border-blue-500/60"
+                  />
                   <button
                     onClick={handleCopyUrl}
                     data-fx-magnet="subtle"
@@ -224,7 +234,9 @@ export const PhoneRelayModal: React.FC<PhoneRelayModalProps> = ({
               <div className="flex items-start space-x-2.5 text-[11px] text-slate-400 bg-blue-500/5 border border-blue-500/15 rounded-xl p-3 leading-relaxed">
                 <Smartphone className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
                 <span>
-                  手机与电脑连接同一 Wi-Fi（或手机热点）即可直连传输，照片全程仅在本地局域网流转，不上传第三方云端。
+                  {isLocalHost
+                    ? '手机与电脑连接同一 Wi-Fi（或手机热点）即可直连传输，照片全程仅在本地局域网流转。'
+                    : '当前已运行在公网地址，手机使用 4G/5G 流量或任意 Wi-Fi 用系统相机扫码即可秒传电脑。'}
                 </span>
               </div>
             </>

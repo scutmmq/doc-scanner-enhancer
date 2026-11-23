@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { PipelineParams } from './ParameterPanel';
 import { OpticalButton } from './OpticalButton';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 export interface DiagnosisIssue {
   code: string;
@@ -99,12 +100,10 @@ export const SimpleSmartPanel: React.FC<SimpleSmartPanelProps> = ({
 
   const handleCopyText = async () => {
     if (!ocrText.trim()) return;
-    try {
-      await navigator.clipboard.writeText(ocrText);
+    const ok = await copyTextToClipboard(ocrText);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
-    } catch {
-      // ignore clipboard errors
     }
   };
 

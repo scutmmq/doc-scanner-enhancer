@@ -402,11 +402,16 @@ async def health_check():
         os.path.exists(os.path.join(base_dir, rel))
         for rel in ("frontend/dist/hero-intro.mp4", "frontend/public/hero-intro.mp4")
     )
+    has_mobile_hero_video = any(
+        os.path.exists(os.path.join(base_dir, rel))
+        for rel in ("frontend/dist/hero-intro-mobile.mp4", "frontend/public/hero-intro-mobile.mp4")
+    )
     return {
         "status": "ok",
         "service": "DocScanner-Enhancer API",
         "version": "3.0.0",
         "has_hero_video": has_hero_video,
+        "has_mobile_hero_video": has_mobile_hero_video,
     }
 
 

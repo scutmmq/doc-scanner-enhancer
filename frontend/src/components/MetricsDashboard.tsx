@@ -7,6 +7,7 @@ import {
   Award,
   FileDown
 } from 'lucide-react';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 interface MetricsDashboardProps {
   metrics: {
@@ -56,11 +57,13 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
       ? ocrData?.text || comp?.enhanced?.text || ''
       : ocrData?.raw_text || comp?.raw?.text || '';
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!displayedText) return;
-    navigator.clipboard.writeText(displayedText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const ok = await copyTextToClipboard(displayedText);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const handleExportReport = () => {

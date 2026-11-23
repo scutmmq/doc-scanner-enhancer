@@ -89,6 +89,7 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
   const isExitingRef = useRef<boolean>(false);
 
   const [hasHeroVideo, setHasHeroVideo] = useState<boolean>(false);
+  const [hasMobileHeroVideo, setHasMobileHeroVideo] = useState<boolean>(false);
   const [useVideoFallback, setUseVideoFallback] = useState<boolean>(false);
   const [videoReady, setVideoReady] = useState<boolean>(false);
   const [activeMode, setActiveMode] = useState<OpticalModeId>('shadow');
@@ -97,15 +98,15 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
     activeModeRef.current = activeMode;
   }, [activeMode]);
 
-  // 静默检测服务端是否已挂载自定义全屏背景视频 /hero-intro.mp4（零 404 噪音）
+  // 静默检测服务端是否已挂载自定义全屏背景视频 /hero-intro.mp4（及可选竖屏版 /hero-intro-mobile.mp4）
   useEffect(() => {
     let mounted = true;
     fetch('/api/v1/health')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (mounted && data?.has_hero_video) {
-          setHasHeroVideo(true);
-        }
+        if (!mounted || !data) return;
+        if (data.has_hero_video) setHasHeroVideo(true);
+        if (data.has_mobile_hero_video) setHasMobileHeroVideo(true);
       })
       .catch(() => {});
     return () => {
@@ -494,7 +495,9 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
       className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden bg-[#030408] text-white select-none"
     >
       {/* ================================================================
-          背景层：100% 全屏铺满视频 (frontend/public/hero-intro.mp4) 或全屏棚拍光学 Canvas
+          背景层：
+          - 桌面端 (md+)：100% 全屏铺满清晰视频 /hero-intro.mp4（原样零改动）
+          - 移动端 (< md)：若存在 /hero-intro-mobile.mp4 则全屏竖放；否则底层渲染同源虚化流光氛围底，中层完整展示 16:9 无裁切视频
       ================================================================ */}
       {hasHeroVideo && !useVideoFallback && (
         <video
@@ -506,8 +509,23 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
           onCanPlay={() => setVideoReady(true)}
           onError={() => setUseVideoFallback(true)}
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${
-            videoReady ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          }`}
+            hasMobileHeroVideo
+              ? 'hidden md:block'
+              : 'blur-2xl scale-125 opacity-45 md:blur-none md:scale-100 md:opacity-100'
+          } ${videoReady ? '' : '!opacity-0 pointer-events-none'}`}
+        />
+      )}
+
+      {hasMobileHeroVideo && !useVideoFallback && (
+        <video
+          src="/hero-intro-mobile.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          onCanPlay={() => setVideoReady(true)}
+          onError={() => setHasMobileHeroVideo(false)}
+          className="md:hidden absolute inset-0 w-full h-full object-cover"
         />
       )}
 
@@ -576,33 +594,50 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
           </div>
         </header>
 
-        {/* 2. 中上部旗舰主视觉中心（居中悬浮于全屏暗部留白区，下方留给全出血光影舞台） */}
-        <main className="flex-1 flex flex-col items-center justify-start pt-[9vh] sm:pt-[11vh] px-6 text-center pointer-events-none">
-          <div className="max-w-3xl space-y-4 pointer-events-auto">
-            <div className="hero-title-reveal inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-white/[0.06] backdrop-blur-md border border-white/15 text-xs text-slate-200">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+        {/* 2. 主视觉中心（桌面端 md+ 原样居中大字留白；移动端紧凑排布 + 100% 完整 16:9 视频舞台） */}
+        <main className="flex-1 flex flex-col items-center justify-center md:justify-start py-3 md:pt-[11vh] px-4 sm:px-6 text-center pointer-events-none overflow-y-auto md:overflow-visible">
+          <div className="max-w-3xl w-full space-y-2.5 md:space-y-4 pointer-events-auto">
+            <div className="hero-title-reveal inline-flex items-center space-x-2 px-3 py-1 md:px-3.5 md:py-1.5 rounded-full bg-white/[0.06] backdrop-blur-md border border-white/15 text-[11px] md:text-xs text-slate-200">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
               <span>纯传统精密光学文档修复引擎 · 专治手机扫描废片</span>
             </div>
 
-            <h1 className="hero-title-reveal text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-white drop-shadow-[0_6px_32px_rgba(0,0,0,0.6)]">
+            <h1 className="hero-title-reveal text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white drop-shadow-[0_6px_32px_rgba(0,0,0,0.6)]">
               DocScanner 3.0
             </h1>
 
-            <p className="hero-title-reveal text-xl sm:text-2xl font-medium text-slate-100/95 tracking-wide drop-shadow-[0_2px_18px_rgba(0,0,0,0.65)]">
+            <p className="hero-title-reveal text-base sm:text-xl md:text-2xl font-medium text-slate-100/95 tracking-wide drop-shadow-[0_2px_18px_rgba(0,0,0,0.65)]">
               光学净扫 · 废片新生
             </p>
+
+            {/* 移动端专属：100% 完整无裁切 16:9 影院视窗（完整展现左上激光头、蓝光束、合同与右下中文红章） */}
+            {hasHeroVideo && !hasMobileHeroVideo && !useVideoFallback && (
+              <div className="md:hidden hero-title-reveal pt-1 pb-1">
+                <div className="relative w-full aspect-video rounded-2xl overflow-hidden border border-white/20 bg-black/50 shadow-[0_18px_48px_-12px_rgba(37,99,235,0.5)]">
+                  <video
+                    src="/hero-intro.mp4"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    className="w-full h-full object-contain block"
+                  />
+                  <div className="absolute inset-0 pointer-events-none ring-1 ring-inset ring-white/10 rounded-2xl" />
+                </div>
+              </div>
+            )}
 
             <p className="hero-title-reveal text-xs sm:text-sm text-slate-300/90 max-w-xl mx-auto leading-relaxed">
               {currentModeObj.shortDesc}
             </p>
 
             {/* 磁吸高光交互核心行动按钮组 */}
-            <div className="hero-title-reveal pt-4 flex flex-wrap items-center justify-center gap-4">
+            <div className="hero-title-reveal pt-2 md:pt-4 flex flex-wrap items-center justify-center gap-3 md:gap-4">
               <OpticalButton
                 variant="primary"
                 magnetic="strong"
                 onClick={() => handleAnimatedExit(onEnterWorkbench)}
-                className="min-h-[52px] px-8 rounded-full text-sm font-semibold tracking-wide"
+                className="min-h-[48px] md:min-h-[52px] px-7 md:px-8 rounded-full text-sm font-semibold tracking-wide"
               >
                 <span>立即进入扫描工作台</span>
                 <ArrowRight className="w-4 h-4 ml-2 transition-transform duration-300 group-hover:translate-x-1.5" />
@@ -623,7 +658,7 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
                 variant="glass"
                 magnetic="strong"
                 onClick={() => handleAnimatedExit(onDirectCamera || onEnterWorkbench)}
-                className="sm:hidden inline-flex min-h-[52px] px-7 rounded-full text-sm font-medium tracking-wide"
+                className="sm:hidden inline-flex min-h-[48px] px-6 rounded-full text-sm font-medium tracking-wide"
               >
                 <Camera className="w-4 h-4 mr-2 text-emerald-400" />
                 <span>直接拍照扫描</span>
@@ -632,9 +667,9 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
           </div>
         </main>
 
-        {/* 3. 底部悬浮玻璃态交互模式切换坞 */}
-        <footer className="hero-bottom-dock px-5 sm:px-10 pb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center justify-center gap-2 bg-black/45 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-2xl">
+        {/* 3. 底部悬浮玻璃态交互模式切换坞（移动端紧凑横滑单行，桌面端原样不变） */}
+        <footer className="hero-bottom-dock px-4 sm:px-10 pb-4 md:pb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="w-full sm:w-auto overflow-x-auto flex items-center sm:flex-wrap justify-start sm:justify-center gap-1.5 sm:gap-2 bg-black/50 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-2xl">
             {OPTICAL_MODES.map((m) => {
               const Icon = m.icon;
               const isActive = activeMode === m.id;
@@ -645,7 +680,7 @@ export const HeroIntro: React.FC<HeroIntroProps> = ({
                   data-fx-magnet="subtle"
                   onMouseEnter={() => setActiveMode(m.id)}
                   onClick={() => setActiveMode(m.id)}
-                  className={`min-h-[44px] px-3.5 rounded-xl text-xs flex items-center space-x-2 transition-all duration-300 ${
+                  className={`min-h-[44px] px-3 sm:px-3.5 rounded-xl text-xs flex items-center space-x-1.5 sm:space-x-2 whitespace-nowrap flex-shrink-0 transition-all duration-300 ${
                     isActive
                       ? 'bg-white/15 text-white border border-white/25 shadow-lg'
                       : 'text-slate-300/80 hover:text-white border border-transparent hover:bg-white/[0.06]'

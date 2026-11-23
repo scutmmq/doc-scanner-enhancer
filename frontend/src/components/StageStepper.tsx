@@ -17,6 +17,8 @@ interface StageStepperProps {
   onSelectStage: (stage: StageItem | null) => void;
   selectedDiagKey: string | null;
   onSelectDiag: (diagKey: string | null) => void;
+  /** 'horizontal' 为桌面端底部横向轨道（默认，保持 PC 端零变动）；'vertical' 为移动端专业坞「步骤」分栏紧凑纵向列表 */
+  layout?: 'horizontal' | 'vertical';
 }
 
 export const DIAG_LABELS: Record<string, string> = {
@@ -38,6 +40,7 @@ export const StageStepper: React.FC<StageStepperProps> = ({
   onSelectStage,
   selectedDiagKey,
   onSelectDiag,
+  layout = 'horizontal',
 }) => {
   const listRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{
@@ -122,6 +125,95 @@ export const StageStepper: React.FC<StageStepperProps> = ({
   const nudgeScroll = (delta: number) => {
     listRef.current?.scrollBy({ left: delta, behavior: 'smooth' });
   };
+
+  if (layout === 'vertical') {
+    return (
+      <div className="bg-[#0d121d] rounded-lg select-none h-full flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-800/80 gap-2 flex-shrink-0">
+          <div className="flex items-center space-x-1.5 text-[11px] font-mono text-slate-300 min-w-0">
+            <Activity className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+            <span className="font-semibold truncate">点击阶段或诊断图，上方实时切换</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              onSelectStage(null);
+              onSelectDiag(null);
+            }}
+            className={`text-[11px] font-mono px-2.5 py-1 rounded-lg flex items-center whitespace-nowrap flex-shrink-0 transition-colors ${
+              currentStageId === null
+                ? 'bg-blue-600 text-white ds-keep-white font-bold shadow'
+                : 'bg-slate-900 text-slate-300 border border-slate-700'
+            }`}
+          >
+            <Eye className="w-3 h-3 mr-1" />
+            最终成品
+          </button>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto p-1.5 space-y-2">
+          {stages.map((stage) => {
+            const isSelected = currentStageId === stage.stage_id;
+            const diagKeys = Object.keys(stage.diagnostics || {});
+            return (
+              <div
+                key={stage.stage_id}
+                onClick={() => {
+                  onSelectStage(stage);
+                  onSelectDiag(null);
+                }}
+                className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-blue-950/40 border-blue-500 shadow-sm'
+                    : 'bg-[#121826] border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center space-x-2 min-w-0">
+                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-blue-400 flex-shrink-0">
+                      0{stage.stage_id}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-100 truncate">
+                      {stage.stage_name}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400 tabular-nums flex-shrink-0">
+                    {stage.elapsed_ms} ms
+                  </span>
+                </div>
+
+                {diagKeys.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-slate-800/80 flex flex-wrap gap-1.5">
+                    {diagKeys.map((k) => {
+                      const activeDiag = isSelected && selectedDiagKey === k;
+                      return (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectStage(stage);
+                            onSelectDiag(activeDiag ? null : k);
+                          }}
+                          className={`min-h-[30px] text-[11px] font-mono px-2.5 py-1 rounded-lg transition-colors ${
+                            activeDiag
+                              ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                              : 'bg-slate-900 text-slate-300 border border-slate-700/80 hover:border-amber-400/50'
+                          }`}
+                        >
+                          {DIAG_LABELS[k] || k}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-[#0d121d] rounded-xl border border-slate-800 p-2.5 select-none h-full flex flex-col justify-between">
