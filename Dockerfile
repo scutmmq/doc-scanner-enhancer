@@ -1,7 +1,10 @@
+ARG NODE_IMAGE=node:20-slim
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm
+
 # ==========================================================
 # Stage 1: Build React 19 + Vite Frontend (includes public/hero-intro.mp4)
 # ==========================================================
-FROM node:20-slim AS frontend-builder
+FROM ${NODE_IMAGE} AS frontend-builder
 
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
@@ -15,7 +18,7 @@ RUN npm run build
 # ==========================================================
 # Stage 2: Production Python 3.12 Runtime (FastAPI + OpenCV + RapidOCR)
 # ==========================================================
-FROM python:3.12-slim-bookworm AS runtime
+FROM ${PYTHON_IMAGE} AS runtime
 
 ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 ARG PIP_TRUSTED_HOST=mirrors.aliyun.com
