@@ -13,7 +13,9 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm config set registry "${NPM_REGISTRY}" && npm ci
 
 COPY frontend/ ./
-RUN npm run build
+# 本地/CI 已完成 tsc 类型检查；容器构建仅运行 vite 打包并限制 V8 堆内存，杜绝 1.6G 云机 OOM 卡死
+ENV NODE_OPTIONS="--max-old-space-size=512"
+RUN ./node_modules/.bin/vite build
 
 # ==========================================================
 # Stage 2: Production Python 3.12 Runtime (FastAPI + OpenCV + RapidOCR)
