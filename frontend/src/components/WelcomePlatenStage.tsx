@@ -82,6 +82,7 @@ function getSampleShortTag(sample: WelcomeSampleMeta): string {
   if (key.includes('complex') || key.includes('perspective')) return '透视+复合修复';
   if (key.includes('motion')) return '线性 PSF 去重影';
   if (key.includes('color') || key.includes('noise') || key.includes('denoise')) return '白平衡+降噪';
+  if (key.includes('stamp') || key.includes('seal')) return 'HSV 护章彩印';
   return '一键实测';
 }
 
@@ -823,14 +824,18 @@ export const WelcomePlatenStage: React.FC<WelcomePlatenStageProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            <div
+              className={`grid grid-cols-2 sm:grid-cols-4 ${
+                samples.length >= 7 ? 'lg:grid-cols-7' : 'lg:grid-cols-6'
+              } gap-2`}
+            >
               {samples.map((s) => (
                 <button
                   key={s.filename}
                   type="button"
                   onClick={() => onSelectSample(s)}
                   data-fx-magnet="subtle"
-                  className="ds-sample-card group min-h-[54px] px-2.5 py-2 rounded-xl flex items-center gap-2.5 text-left"
+                  className="ds-sample-card group min-h-[54px] px-2 py-2 rounded-xl flex items-center gap-2 text-left"
                 >
                   <div
                     className="w-7 h-9 rounded-[4px] overflow-hidden flex-shrink-0 border"

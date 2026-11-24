@@ -108,6 +108,23 @@ SAMPLE_CATALOG: Dict[str, Dict[str, Any]] = {
             "enable_restoration": False,
             "binarize_method": "sauvola",
         }
+    },
+    "test7_red_stamp.png": {
+        "id": "test7_red_stamp",
+        "title": "红章与彩笔批注",
+        "subtitle": "消除暗影偏色同时保留鲜艳红公章与蓝笔批注",
+        "recommended_preset": "stamp",
+        "recommended_params": {
+            "output_mode": "stamp_preserve",
+            "enable_geometric": False,
+            "enable_white_balance": True,
+            "enable_illumination": True,
+            "illumination_kernel_size": 45,
+            "contrast_method": "stretch_clahe",
+            "enable_frequency_filter": False,
+            "enable_restoration": False,
+            "binarize_method": "sauvola",
+        }
     }
 }
 
@@ -256,6 +273,32 @@ def apply_color_cast_and_noise(img: np.ndarray, seed: int = 42) -> np.ndarray:
     return out
 
 
+def apply_red_stamp_and_annotation(img: np.ndarray) -> np.ndarray:
+    """在右下角空白签章区叠加高保真红色实验室公章与蓝笔手写批注（用于演示 HSV 红章/彩笔保护）"""
+    stamped = img.copy()
+    cx, cy = 562, 796
+    red_bgr = (24, 28, 222)
+    blue_bgr = (205, 75, 20)
+
+    # 双环红色公章与中心五角星轮廓
+    cv2.circle(stamped, (cx, cy), 58, red_bgr, 4, cv2.LINE_AA)
+    cv2.circle(stamped, (cx, cy), 50, red_bgr, 1, cv2.LINE_AA)
+    star_pts = []
+    for k in range(10):
+        ang = -np.pi / 2.0 + k * np.pi / 5.0
+        r = 16.0 if k % 2 == 0 else 6.8
+        star_pts.append([int(round(cx + r * np.cos(ang))), int(round(cy - 6 + r * np.sin(ang)))])
+    cv2.fillPoly(stamped, [np.array(star_pts, dtype=np.int32)], red_bgr, cv2.LINE_AA)
+    cv2.putText(stamped, "SCUT DIP", (cx - 34, cy - 26), cv2.FONT_HERSHEY_SIMPLEX, 0.44, red_bgr, 2, cv2.LINE_AA)
+    cv2.putText(stamped, "VERIFIED", (cx - 33, cy + 28), cv2.FONT_HERSHEY_SIMPLEX, 0.44, red_bgr, 2, cv2.LINE_AA)
+
+    # 蓝笔手写对勾与批注
+    check_pts = np.array([[412, 822], [424, 836], [448, 804]], dtype=np.int32)
+    cv2.polylines(stamped, [check_pts], False, blue_bgr, 3, cv2.LINE_AA)
+    cv2.putText(stamped, "PASS", (452, 834), cv2.FONT_HERSHEY_SIMPLEX, 0.48, blue_bgr, 2, cv2.LINE_AA)
+    return stamped
+
+
 def generate_benchmark_samples(out_dir: str = "data/samples", gt_dir: str = "data/ground_truth"):
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(gt_dir, exist_ok=True)
@@ -290,8 +333,17 @@ def generate_benchmark_samples(out_dir: str = "data/samples", gt_dir: str = "dat
     # 样本 6: 暖黄台灯偏色 + 椒盐与高斯混合噪声
     sample6 = apply_color_cast_and_noise(base_doc)
     cv2.imwrite(os.path.join(out_dir, "test6_color_cast_noise.png"), sample6)
-    
-    print("✅ 6 类全场景真实退化测试样本库生成完毕:")
+
+    # 样本 7: 红色公章与蓝笔批注 + 室内阴影与轻微暖黄偏色（演示 HSV 红章/批注彩印保护）
+    stamped_gt = apply_red_stamp_and_annotation(base_doc)
+    cv2.imwrite(os.path.join(gt_dir, "stamped_doc_gt.png"), stamped_gt)
+    sample7 = apply_shadow(stamped_gt, heavy=False).astype(np.float32)
+    sample7[:, :, 0] *= 0.78
+    sample7[:, :, 1] *= 0.88
+    sample7 = np.clip(sample7, 0, 255).astype(np.uint8)
+    cv2.imwrite(os.path.join(out_dir, "test7_red_stamp.png"), sample7)
+
+    print("✅ 7 类全场景真实退化测试样本库生成完毕:")
     for filename, info in SAMPLE_CATALOG.items():
         print(f"  • {out_dir}/{filename} -> {info['title']}")
     print(f"  • {gt_dir}/standard_doc_gt.png & .txt")

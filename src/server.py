@@ -245,10 +245,11 @@ def base64_to_cv2(b64_str: str) -> np.ndarray:
 
 
 def _ensure_samples_exist():
-    """确保 6 类基准退化样本与真值文件已生成"""
+    """确保 7 类基准退化样本与真值文件已生成"""
     gt_path = os.path.join("data", "ground_truth", "standard_doc_gt.png")
     s6_path = os.path.join("data", "samples", "test6_color_cast_noise.png")
-    if not os.path.exists(gt_path) or not os.path.exists(s6_path):
+    s7_path = os.path.join("data", "samples", "test7_red_stamp.png")
+    if not os.path.exists(gt_path) or not os.path.exists(s6_path) or not os.path.exists(s7_path):
         generate_benchmark_samples()
 
 
@@ -334,7 +335,16 @@ def _execute_enhance_sync(
     gt_text = cfg_dict.get("ground_truth_text")
     gt_img = None
     if matched_sample_name:
-        gt_img_path = os.path.join("data", "ground_truth", "standard_doc_gt.png")
+        use_stamped_gt = (
+            matched_sample_name == "test7_red_stamp.png"
+            and config.output_mode in ("stamp_preserve", "color")
+            and os.path.exists(os.path.join("data", "ground_truth", "stamped_doc_gt.png"))
+        )
+        gt_img_path = (
+            os.path.join("data", "ground_truth", "stamped_doc_gt.png")
+            if use_stamped_gt
+            else os.path.join("data", "ground_truth", "standard_doc_gt.png")
+        )
         gt_txt_path = os.path.join("data", "ground_truth", "standard_doc_gt.txt")
         if os.path.exists(gt_img_path):
             gt_img = cv2.imread(gt_img_path)

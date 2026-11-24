@@ -19,7 +19,7 @@ from src.server import app
 
 
 def _ensure_benchmark_files():
-    if not os.path.exists("data/samples/test6_color_cast_noise.png"):
+    if not os.path.exists("data/samples/test7_red_stamp.png"):
         generate_benchmark_samples()
 
 
@@ -34,6 +34,7 @@ def test_auto_diagnose_all_degradation_categories():
         ("data/samples/test4_complex_degraded.png", {"skew", "shadow", "moire"}, {"defocus_blur", "motion_blur"}),
         ("data/samples/test5_motion_blur.png", {"motion_blur"}, {"moire", "defocus_blur"}),
         ("data/samples/test6_color_cast_noise.png", {"shadow", "color_cast", "impulse_noise"}, {"moire", "defocus_blur"}),
+        ("data/samples/test7_red_stamp.png", {"color_stamp", "shadow"}, {"moire", "defocus_blur", "motion_blur"}),
     ]
 
     for path, must_have, must_not_have in cases:
