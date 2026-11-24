@@ -37,7 +37,8 @@ class OCREvaluator:
     使用单例/按需懒加载 + 内容哈希 LRU 缓存避免重复 ONNX 推理，并针对低核数云服务器优化线程数。
     """
     _ocr_engine = None
-    _engine_lock = threading.Lock()
+    # RapidOCR 的检测/识别对象包含可变状态，使用可重入锁串行保护初始化与推理，同时缓存命中仍在锁外
+    _engine_lock = threading.RLock()
     _cache_lock = threading.Lock()
     _text_cache: "OrderedDict[str, Tuple[str, List[Dict[str, Any]]]]" = OrderedDict()
     _CACHE_MAX_SIZE = 32
@@ -123,7 +124,8 @@ class OCREvaluator:
         scale_x = out_w / float(max(infer_w, 1))
         scale_y = out_h / float(max(infer_h, 1))
 
-        result, _ = engine(infer_img, use_cls=False)
+        with cls._engine_lock:
+            result, _ = engine(infer_img, use_cls=False)
         if not result:
             empty_res: Tuple[str, List[Dict[str, Any]]] = ("", [])
             if use_cache and cache_key is not None:
@@ -204,14 +206,17 @@ class OCREvaluator:
         ground_truth_text: Optional[str] = None,
         cached_enhanced: Optional[Tuple[str, List[Dict[str, Any]]]] = None,
         enhanced_target_shape: Optional[Tuple[int, int]] = None,
+        *,
+        enhanced_result: Optional[Tuple[str, List[Dict[str, Any]]]] = None,
     ) -> Dict[str, Any]:
         """
         对增强前后的图像执行端到端对比评测。
-        若已提前算出增强图 OCR（cached_enhanced），直接复用，彻底避免重复推理。
+        若已提前算出增强图 OCR（cached_enhanced / enhanced_result），直接复用，彻底避免重复推理。
         """
         raw_text, raw_boxes = cls.extract_text(raw_image)
-        if cached_enhanced is not None:
-            enhanced_text, enhanced_boxes = cached_enhanced
+        effective_cached = cached_enhanced if cached_enhanced is not None else enhanced_result
+        if effective_cached is not None:
+            enhanced_text, enhanced_boxes = effective_cached
         else:
             enhanced_text, enhanced_boxes = cls.extract_text(
                 enhanced_image, target_shape=enhanced_target_shape

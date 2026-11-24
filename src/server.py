@@ -185,7 +185,10 @@ def _make_qr_base64(text: str) -> str:
 def decode_uploaded_image(contents: bytes) -> Optional[np.ndarray]:
     """
     安全解码上传图片并自动处理手机相机 EXIF 旋转标签（解决 iOS/Android 竖拍变横图问题）。
+    空字节或无法解码时返回 None，避免 OpenCV 空缓冲区断言触发 500 错误。
     """
+    if not contents:
+        return None
     try:
         with Image.open(io.BytesIO(contents)) as pil_img:
             pil_img = ImageOps.exif_transpose(pil_img)
@@ -197,7 +200,12 @@ def decode_uploaded_image(contents: bytes) -> Optional[np.ndarray]:
             return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
     except Exception:
         nparr = np.frombuffer(contents, np.uint8)
-        return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if nparr.size == 0:
+            return None
+        try:
+            return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        except cv2.error:
+            return None
 
 
 def cv2_to_base64(
@@ -428,6 +436,19 @@ def _execute_enhance_sync(
     return result_payload
 
 
+def _parse_params_json(params_json: Optional[str]) -> Dict[str, Any]:
+    """解析并校验客户端传入的 params_json，非法 JSON 或非对象类型一律返回 400"""
+    if not params_json:
+        return {}
+    try:
+        cfg_dict = json.loads(params_json)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="params_json 必须是有效的 JSON 对象")
+    if not isinstance(cfg_dict, dict):
+        raise HTTPException(status_code=400, detail="params_json 必须是 JSON 对象")
+    return cfg_dict
+
+
 async def _load_request_image(
     file: Optional[UploadFile],
     sample_name: Optional[str],
@@ -478,9 +499,7 @@ async def health_check():
     }
 
 
-@app.get("/api/v1/samples")
-async def list_benchmark_samples():
-    """获取内置 6 大典型退化测试样本列表（支持前端一键载入演示）"""
+def _list_benchmark_samples_sync() -> List[Dict[str, Any]]:
     _ensure_samples_exist()
     items = []
     for fname, meta in SAMPLE_CATALOG.items():
@@ -498,14 +517,19 @@ async def list_benchmark_samples():
             "subtitle": meta["subtitle"],
             "recommended_preset": meta["recommended_preset"],
             "recommended_params": meta["recommended_params"],
-            "thumbnail_base64": thumb_b64
+            "thumbnail_base64": thumb_b64,
         })
+    return items
+
+
+@app.get("/api/v1/samples")
+async def list_benchmark_samples():
+    """获取内置 6 大典型退化测试样本列表（支持前端一键载入演示）"""
+    items = await asyncio.to_thread(_list_benchmark_samples_sync)
     return {"success": True, "samples": items}
 
 
-@app.get("/api/v1/samples/{sample_name}")
-async def get_benchmark_sample(sample_name: str):
-    """读取指定内置测试样本原图与推荐参数"""
+def _get_benchmark_sample_sync(sample_name: str) -> Dict[str, Any]:
     _ensure_samples_exist()
     if sample_name not in SAMPLE_CATALOG:
         raise HTTPException(status_code=404, detail=f"未找到内置样本: {sample_name}")
@@ -516,7 +540,11 @@ async def get_benchmark_sample(sample_name: str):
         raise HTTPException(status_code=404, detail=f"样本文件读取失败: {sample_name}")
 
     gt_txt_path = os.path.join("data", "ground_truth", "standard_doc_gt.txt")
-    gt_text = open(gt_txt_path, "r", encoding="utf-8").read() if os.path.exists(gt_txt_path) else ""
+    if os.path.exists(gt_txt_path):
+        with open(gt_txt_path, "r", encoding="utf-8") as f:
+            gt_text = f.read()
+    else:
+        gt_text = ""
 
     meta = SAMPLE_CATALOG[sample_name]
     return {
@@ -526,8 +554,14 @@ async def get_benchmark_sample(sample_name: str):
         "subtitle": meta["subtitle"],
         "image_base64": cv2_to_base64(img),
         "recommended_params": meta["recommended_params"],
-        "ground_truth_text": gt_text
+        "ground_truth_text": gt_text,
     }
+
+
+@app.get("/api/v1/samples/{sample_name}")
+async def get_benchmark_sample(sample_name: str):
+    """读取指定内置测试样本原图与推荐参数"""
+    return await asyncio.to_thread(_get_benchmark_sample_sync, sample_name)
 
 
 @app.post("/api/v1/diagnose")
@@ -556,7 +590,7 @@ async def enhance_document(
     一键全流程增强接口 (支持上传 Multipart 图像文件或指定内置 sample_name + JSON 超参数)。
     """
     try:
-        cfg_dict = json.loads(params_json) if params_json else {}
+        cfg_dict = _parse_params_json(params_json)
         raw_img, matched_sample_name = await _load_request_image(file, sample_name, cfg_dict)
         return await asyncio.to_thread(_execute_enhance_sync, raw_img, cfg_dict, matched_sample_name, None)
     except HTTPException:
@@ -576,7 +610,7 @@ async def enhance_document_stream(
     """
     SSE 实时阶段进度流式增强接口：逐阶段推送 `event: progress` 与最终 `event: result`，杜绝 4K 处理静默等待。
     """
-    cfg_dict = json.loads(params_json) if params_json else {}
+    cfg_dict = _parse_params_json(params_json)
     raw_img, matched_sample_name = await _load_request_image(file, sample_name, cfg_dict)
 
     event_queue: "queue.Queue[tuple[str, Any]]" = queue.Queue()
@@ -851,18 +885,11 @@ async def run_sampling_lab(
     }
 
 
-@app.post("/api/v1/evaluate")
-async def evaluate_images(
-    raw_file: UploadFile = File(...),
-    enhanced_file: UploadFile = File(...),
-    gt_text: Optional[str] = Form(None)
-):
-    """
-    独立评测对比接口：计算两张图的 PSNR、SSIM 及 OCR 识别准确率。
-    """
-    raw_data = await raw_file.read()
-    enh_data = await enhanced_file.read()
-
+def _evaluate_images_sync(
+    raw_data: bytes,
+    enh_data: bytes,
+    gt_text: Optional[str],
+) -> Dict[str, Any]:
     raw_img = decode_uploaded_image(raw_data)
     enh_img = decode_uploaded_image(enh_data)
 
@@ -874,8 +901,22 @@ async def evaluate_images(
 
     return {
         "metrics": metrics,
-        "ocr_comparison": ocr_comparison
+        "ocr_comparison": ocr_comparison,
     }
+
+
+@app.post("/api/v1/evaluate")
+async def evaluate_images(
+    raw_file: UploadFile = File(...),
+    enhanced_file: UploadFile = File(...),
+    gt_text: Optional[str] = Form(None)
+):
+    """
+    独立评测对比接口：计算两张图的 PSNR、SSIM 及 OCR 识别准确率。
+    """
+    raw_data = await raw_file.read()
+    enh_data = await enhanced_file.read()
+    return await asyncio.to_thread(_evaluate_images_sync, raw_data, enh_data, gt_text)
 
 
 frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
