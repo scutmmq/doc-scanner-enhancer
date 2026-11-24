@@ -2,12 +2,10 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import {
-  ArrowRight,
   Camera,
   ClipboardPaste,
   MoveHorizontal,
   QrCode,
-  ScanLine,
   Upload,
 } from 'lucide-react';
 import { OpticalButton } from './OpticalButton';
@@ -76,14 +74,16 @@ const SPECIMEN_MODES: SpecimenSpec[] = [
   },
 ];
 
-const PIPELINE_NODES = [
-  { idx: '01', title: '几何矫正', desc: '四角检测与单应透视' },
-  { idx: '02', title: '频域消网', desc: '2D-FFT 共轭陷波' },
-  { idx: '03', title: '维纳复原', desc: 'PSF 逆滤波去模糊' },
-  { idx: '04', title: '匀光保章', desc: 'Retinex 除影护红章' },
-];
-
-const RULER_MARKS = ['0mm', '50', '100', '150', 'A4 · 210mm', '250', '297mm'];
+function getSampleShortTag(sample: WelcomeSampleMeta): string {
+  const key = `${sample.id} ${sample.filename}`.toLowerCase();
+  if (key.includes('shadow')) return 'Retinex 匀光';
+  if (key.includes('moire')) return '2D-FFT 陷波';
+  if (key.includes('defocus')) return '圆盘 PSF 去糊';
+  if (key.includes('complex') || key.includes('perspective')) return '透视+复合修复';
+  if (key.includes('motion')) return '线性 PSF 去重影';
+  if (key.includes('color') || key.includes('noise') || key.includes('denoise')) return '白平衡+降噪';
+  return '一键实测';
+}
 
 /**
  * 精密光学压稿台双页 SVG 样张（确保 Before/After 几何 1:1 严格对齐，0ms 渲染）
@@ -509,238 +509,140 @@ export const WelcomePlatenStage: React.FC<WelcomePlatenStageProps> = ({
         </svg>
       </div>
 
-      {/* 方案一：顶部毫米与 DPI 物理标尺条（桌面端可见） */}
-      <div
-        aria-hidden="true"
-        className="hidden md:flex items-center justify-between px-6 lg:px-8 h-7 border-b relative z-10 flex-shrink-0 select-none"
-        style={{
-          borderColor: 'var(--platen-hairline)',
-          backgroundColor: 'var(--bg-header)',
-        }}
-      >
-        <div className="flex items-center space-x-5 lg:space-x-8">
-          {RULER_MARKS.map((mark) => (
-            <div key={mark} className="flex items-center space-x-1.5">
-              <span
-                className="inline-block w-px h-2.5"
-                style={{ backgroundColor: 'var(--platen-tick)' }}
-              />
-              <span
-                className="font-mono text-[10px] tracking-wider"
-                style={{ color: 'var(--platen-tick)' }}
-              >
-                {mark}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div
-          className="font-mono text-[10px] tracking-widest uppercase"
-          style={{ color: 'var(--platen-tick)' }}
-        >
-          CALIBRATED PLATEN · 300 DPI · PURE TRADITIONAL DIP
-        </div>
-      </div>
-
-      {/* 全局文件拖入状态提示浮条 */}
-      {isDraggingOver && (
-        <div
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full font-mono text-xs font-semibold shadow-xl flex items-center space-x-2 pointer-events-none"
-          style={{
-            backgroundColor: 'var(--accent)',
-            color: 'var(--accent-on)',
-          }}
-        >
-          <ScanLine className="w-4 h-4" />
-          <span>松开鼠标，立即置入光学压稿台诊断</span>
-        </div>
-      )}
-
-      {/* 主体：非对称工作台双栏 + 底部检视台样张 */}
-      <div className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 lg:py-8 my-auto space-y-5">
-        {/* 方案二：非对称双栏舞台 */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-          {/* 左栏：光学压稿台控制台 & 四节点流水线 */}
-          <div className="lg:col-span-7 flex flex-col justify-between gap-3.5 js-platen-enter">
-            <div
-              onClick={onUploadClick}
-              data-fx-surface=""
-              role="region"
-              aria-label="文档导入压稿台"
-              className="group relative flex-1 rounded-2xl p-5 sm:p-7 cursor-pointer transition-all duration-300 flex flex-col justify-between"
+      {/* 主体：3 大呼吸感区块，桌面端一屏零滚动收敛 */}
+      <div className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-5 my-auto space-y-4">
+        {/* 非对称双栏舞台 */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+          {/* 左栏：精简压稿台主控卡 */}
+          <div
+            onClick={onUploadClick}
+            data-fx-surface=""
+            role="region"
+            aria-label="文档导入压稿台"
+            className="lg:col-span-7 js-platen-enter group relative rounded-2xl p-5 sm:p-6 lg:p-7 cursor-pointer transition-all duration-300 flex flex-col justify-between"
+            style={{
+              backgroundColor: 'var(--bg-panel)',
+              border: `1px solid ${isDraggingOver ? 'var(--accent)' : 'var(--border-strong)'}`,
+              boxShadow: isDraggingOver
+                ? '0 0 0 3px var(--accent-soft), var(--card-shadow)'
+                : 'var(--card-shadow)',
+            }}
+          >
+            {/* 四角精密 L 形对准角标 */}
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute top-3 left-3 w-3.5 h-3.5 border-t-2 border-l-2 rounded-tl-[2px] transition-all duration-300 group-hover:scale-110"
               style={{
-                backgroundColor: 'var(--bg-panel)',
-                border: `1px solid ${isDraggingOver ? 'var(--accent)' : 'var(--border-strong)'}`,
-                boxShadow: isDraggingOver
-                  ? '0 0 0 3px var(--accent-soft), var(--card-shadow)'
-                  : 'var(--card-shadow)',
+                borderColor: isDraggingOver ? 'var(--accent)' : 'var(--border-strong)',
               }}
-            >
-              {/* 四角精密 L 形对准角标 */}
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute top-3 left-3 w-3.5 h-3.5 border-t-2 border-l-2 rounded-tl-[2px] transition-all duration-300 group-hover:scale-110"
-                style={{
-                  borderColor: isDraggingOver ? 'var(--accent)' : 'var(--border-strong)',
-                }}
-              />
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute top-3 right-3 w-3.5 h-3.5 border-t-2 border-r-2 rounded-tr-[2px] transition-all duration-300 group-hover:scale-110"
-                style={{
-                  borderColor: isDraggingOver ? 'var(--accent)' : 'var(--border-strong)',
-                }}
-              />
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute bottom-3 left-3 w-3.5 h-3.5 border-b-2 border-l-2 rounded-bl-[2px] transition-all duration-300 group-hover:scale-110"
-                style={{
-                  borderColor: isDraggingOver ? 'var(--accent)' : 'var(--border-strong)',
-                }}
-              />
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute bottom-3 right-3 w-3.5 h-3.5 border-b-2 border-r-2 rounded-br-[2px] transition-all duration-300 group-hover:scale-110"
-                style={{
-                  borderColor: isDraggingOver ? 'var(--accent)' : 'var(--border-strong)',
-                }}
-              />
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute top-3 right-3 w-3.5 h-3.5 border-t-2 border-r-2 rounded-tr-[2px] transition-all duration-300 group-hover:scale-110"
+              style={{
+                borderColor: isDraggingOver ? 'var(--accent)' : 'var(--border-strong)',
+              }}
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute bottom-3 left-3 w-3.5 h-3.5 border-b-2 border-l-2 rounded-bl-[2px] transition-all duration-300 group-hover:scale-110"
+              style={{
+                borderColor: isDraggingOver ? 'var(--accent)' : 'var(--border-strong)',
+              }}
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute bottom-3 right-3 w-3.5 h-3.5 border-b-2 border-r-2 rounded-br-[2px] transition-all duration-300 group-hover:scale-110"
+              style={{
+                borderColor: isDraggingOver ? 'var(--accent)' : 'var(--border-strong)',
+              }}
+            />
 
-              <div>
-                {/* 压稿台状态标识 */}
-                <div className="flex items-center justify-between gap-2 mb-3">
-                  <div
-                    className="inline-flex items-center space-x-2 px-2.5 py-1 rounded-md text-[11px] font-mono"
-                    style={{
-                      backgroundColor: 'var(--accent-soft)',
-                      color: 'var(--accent-text)',
-                      border: '1px solid var(--accent-border)',
-                    }}
-                  >
-                    <span
-                      className="w-1.5 h-1.5 rounded-full animate-pulse"
-                      style={{ backgroundColor: 'var(--accent)' }}
-                    />
-                    <span>OPTICAL SCANNER PLATEN · 待机就绪</span>
-                  </div>
-                  <span
-                    className="hidden sm:inline font-mono text-[11px]"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    MAX 4K · 7-STAGE DIP
-                  </span>
-                </div>
-
-                {/* 主标题与物理工艺说明 */}
-                <h1
-                  className="text-xl sm:text-[26px] font-bold tracking-tight leading-snug"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  把手机废片放上光学压稿台，
-                  <span className="sm:block">自动诊断并还原净白扫描件</span>
-                </h1>
-
-                <p
-                  className="text-xs sm:text-sm mt-2.5 leading-relaxed max-w-xl"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  自动检测侧光手影、屏幕摩尔纹、斜拍透视与微距失焦，按物理退化逆序执行可解释复原，并在彩印与二值模式中保留红章笔迹。
-                </p>
+            <div>
+              {/* 克制行内状态提示（无边框胶囊堆砌） */}
+              <div
+                className="inline-flex items-center space-x-2 text-[11px] font-mono mb-2.5"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full animate-pulse flex-shrink-0"
+                  style={{ backgroundColor: 'var(--accent)' }}
+                />
+                <span>光学扫描压稿台 · 纯传统数字图像复原</span>
               </div>
 
-              {/* 操作区：按钮与快捷键 */}
-              <div
-                className="mt-5 pt-5 border-t"
-                style={{ borderColor: 'var(--border-subtle)' }}
-                onClick={(e) => e.stopPropagation()}
+              <h1
+                className="text-xl sm:text-2xl lg:text-[25px] font-bold tracking-tight leading-[1.28]"
+                style={{ color: 'var(--text-primary)' }}
               >
-                <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-                  <OpticalButton
-                    variant="primary"
-                    magnetic="strong"
-                    onClick={onUploadClick}
-                    className="min-h-[46px] px-5 sm:px-6 rounded-xl text-xs sm:text-sm font-semibold"
-                  >
-                    <Upload className="w-4 h-4 mr-2 transition-transform duration-300 group-hover:-translate-y-0.5" />
-                    <span>选择本地照片上传</span>
-                  </OpticalButton>
+                导入文档照片，自动诊断并还原净白扫描件
+              </h1>
 
-                  <OpticalButton
-                    variant="primary"
-                    magnetic="strong"
-                    onClick={onCameraClick}
-                    className="sm:hidden min-h-[46px] px-5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 border-emerald-400/50 text-white"
-                  >
-                    <Camera className="w-4 h-4 mr-2" />
-                    <span>直接拍照扫描</span>
-                  </OpticalButton>
+              <p
+                className="text-xs sm:text-sm mt-2 leading-relaxed max-w-xl"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                针对侧光手影、屏幕摩尔纹、斜拍透视与微距失焦自动匹配传统复原管线，支持红章与批注色彩保真。
+              </p>
+            </div>
 
-                  <OpticalButton
-                    variant="glass"
-                    magnetic="strong"
-                    onClick={onOpenPhoneRelay}
-                    className="hidden sm:inline-flex min-h-[46px] px-5 rounded-xl text-xs sm:text-sm font-medium"
-                  >
-                    <QrCode className="w-4 h-4 mr-2 text-amber-500 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110" />
-                    <span>手机扫码拍传</span>
-                  </OpticalButton>
+            {/* 操作区与单行轻量工序脚注 */}
+            <div className="mt-5" onClick={(e) => e.stopPropagation()}>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <OpticalButton
+                  variant="primary"
+                  magnetic="strong"
+                  onClick={onUploadClick}
+                  className="min-h-[44px] px-5 rounded-xl text-xs sm:text-sm font-semibold"
+                >
+                  <Upload className="w-4 h-4 mr-2 transition-transform duration-300 group-hover:-translate-y-0.5" />
+                  <span>选择本地照片上传</span>
+                </OpticalButton>
 
-                  <span
-                    className="hidden md:inline-flex min-h-[46px] items-center px-3.5 rounded-xl text-xs font-mono"
-                    style={{
-                      backgroundColor: 'var(--bg-input)',
-                      border: '1px solid var(--border-subtle)',
-                      color: 'var(--text-muted)',
-                    }}
-                  >
-                    <ClipboardPaste className="w-3.5 h-3.5 mr-1.5" />
-                    ⌘V 直接粘贴
-                  </span>
-                </div>
+                <OpticalButton
+                  variant="primary"
+                  magnetic="strong"
+                  onClick={onCameraClick}
+                  className="sm:hidden min-h-[44px] px-4 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 border-emerald-400/50 text-white"
+                >
+                  <Camera className="w-4 h-4 mr-1.5" />
+                  <span>直接拍照扫描</span>
+                </OpticalButton>
 
-                <div
-                  className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-mono"
+                <OpticalButton
+                  variant="glass"
+                  magnetic="strong"
+                  onClick={onOpenPhoneRelay}
+                  className="hidden sm:inline-flex min-h-[44px] px-4 rounded-xl text-xs sm:text-sm font-medium"
+                >
+                  <QrCode className="w-4 h-4 mr-2 text-amber-500 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110" />
+                  <span>手机扫码拍传</span>
+                </OpticalButton>
+
+                <span
+                  className="hidden md:inline-flex items-center pl-1.5 text-xs font-mono"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  <span>• 拖入 JPG / PNG / WebP 原图</span>
-                  <span>• 零深度学习黑盒 · 7 步中间图实时可查</span>
-                </div>
+                  <ClipboardPaste className="w-3.5 h-3.5 mr-1.5" />
+                  支持 ⌘V 直接粘贴
+                </span>
               </div>
-            </div>
 
-            {/* 4 节点物理处理链路指示条 */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              {PIPELINE_NODES.map((node) => (
-                <div
-                  key={node.idx}
-                  className="rounded-xl px-3 py-2.5 transition-colors"
-                  style={{
-                    backgroundColor: 'var(--bg-panel)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <div className="flex items-center space-x-1.5">
-                    <span
-                      className="font-mono text-[10px] font-bold"
-                      style={{ color: 'var(--accent-text)' }}
-                    >
-                      {node.idx}
-                    </span>
-                    <span
-                      className="text-xs font-semibold truncate"
-                      style={{ color: 'var(--text-primary)' }}
-                    >
-                      {node.title}
-                    </span>
-                  </div>
-                  <div
-                    className="text-[10px] mt-0.5 truncate"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    {node.desc}
-                  </div>
-                </div>
-              ))}
+              <div
+                className="mt-5 pt-3.5 border-t flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-mono"
+                style={{
+                  borderColor: 'var(--border-subtle)',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                <span>01 透视拉直</span>
+                <span>→</span>
+                <span>02 2D-FFT 消网</span>
+                <span>→</span>
+                <span>03 维纳去糊</span>
+                <span>→</span>
+                <span>04 Retinex 匀光护章</span>
+              </div>
             </div>
           </div>
 
@@ -821,7 +723,7 @@ export const WelcomePlatenStage: React.FC<WelcomePlatenStageProps> = ({
               aria-valuemin={8}
               aria-valuemax={92}
               aria-valuenow={Math.round(splitPct)}
-              className="mt-3 relative flex-1 min-h-[225px] sm:min-h-[248px] rounded-xl overflow-hidden select-none touch-none cursor-ew-resize focus:outline-none focus:ring-2"
+              className="mt-2.5 relative flex-1 min-h-[195px] sm:min-h-[205px] rounded-xl overflow-hidden select-none touch-none cursor-ew-resize focus:outline-none focus:ring-2"
               style={{
                 backgroundColor: '#171c26',
                 border: '1px solid var(--border-subtle)',
@@ -889,7 +791,7 @@ export const WelcomePlatenStage: React.FC<WelcomePlatenStageProps> = ({
 
             {/* 底部等宽对齐指标栏 */}
             <div
-              className="mt-3 pt-2.5 border-t flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums"
+              className="mt-2.5 pt-2 border-t flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums"
               style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
             >
               <span>{activeSpec.psnr}</span>
@@ -903,88 +805,58 @@ export const WelcomePlatenStage: React.FC<WelcomePlatenStageProps> = ({
           </div>
         </div>
 
-        {/* 底部升级版：6 类标准退化样张检视台（修正竖版 A4 缩略图裁切问题） */}
+        {/* 底部单行紧凑样张条（无外层大面板与黑斑缩略图，首屏一屏完整容纳） */}
         {samples.length > 0 && (
-          <div
-            className="js-platen-enter rounded-2xl p-4 sm:p-5"
-            style={{
-              backgroundColor: 'var(--bg-panel)',
-              border: '1px solid var(--border-subtle)',
-              boxShadow: 'var(--card-shadow)',
-            }}
-          >
-            <div className="flex items-center justify-between gap-2 mb-3.5">
-              <div className="flex items-center space-x-2">
-                <span
-                  className="w-2 h-2 rounded-sm flex-shrink-0"
-                  style={{ backgroundColor: 'var(--accent)' }}
-                />
-                <span
-                  className="text-xs sm:text-[13px] font-semibold"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  标准退化样张检视台 · 点击卡片一键载入全流程实测
-                </span>
-              </div>
+          <div className="js-platen-enter space-y-2">
+            <div className="flex items-center justify-between px-0.5">
+              <span
+                className="text-xs font-medium"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                手头没有测试图？点击典型退化样张立即实测
+              </span>
               <span
                 className="hidden sm:inline font-mono text-[11px]"
                 style={{ color: 'var(--text-muted)' }}
               >
-                01 — 0{samples.length} SPECIMENS
+                {samples.length} 类标准样张
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3">
-              {samples.map((s, idx) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              {samples.map((s) => (
                 <button
                   key={s.filename}
                   type="button"
                   onClick={() => onSelectSample(s)}
                   data-fx-magnet="subtle"
-                  className="ds-sample-card group min-h-[44px] rounded-xl p-2.5 text-left flex flex-col justify-between"
+                  className="ds-sample-card group min-h-[54px] px-2.5 py-2 rounded-xl flex items-center gap-2.5 text-left"
                 >
-                  <div className="w-full">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span
-                        className="font-mono text-[10px] font-semibold"
-                        style={{ color: 'var(--text-muted)' }}
-                      >
-                        {String(idx + 1).padStart(2, '0')}
-                      </span>
-                      <ArrowRight
-                        className="w-3 h-3 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all flex-shrink-0"
-                        style={{ color: 'var(--accent-text)' }}
-                      />
-                    </div>
-
-                    {/* 竖版 A4 卡纸衬垫井：object-contain 完整展示文档形态 */}
-                    <div
-                      className="w-full h-28 rounded-lg p-1.5 flex items-center justify-center overflow-hidden mb-2"
-                      style={{
-                        backgroundColor: 'var(--bg-input)',
-                        border: '1px solid var(--border-subtle)',
-                      }}
-                    >
-                      <img
-                        src={s.thumbnail_base64}
-                        alt={s.title}
-                        className="h-full w-auto max-w-full object-contain rounded-[2px] shadow-sm group-hover:scale-[1.04] transition-transform duration-300"
-                      />
-                    </div>
+                  <div
+                    className="w-7 h-9 rounded-[4px] overflow-hidden flex-shrink-0 border"
+                    style={{
+                      backgroundColor: 'var(--bg-input)',
+                      borderColor: 'var(--border-subtle)',
+                    }}
+                  >
+                    <img
+                      src={s.thumbnail_base64}
+                      alt={s.title}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
-
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <div
-                      className="text-xs font-semibold truncate transition-colors"
+                      className="text-xs font-semibold truncate"
                       style={{ color: 'var(--text-primary)' }}
                     >
                       {s.title}
                     </div>
                     <div
-                      className="text-[10px] mt-0.5 line-clamp-2 leading-snug"
+                      className="text-[10px] font-mono truncate mt-0.5"
                       style={{ color: 'var(--text-muted)' }}
                     >
-                      {s.subtitle}
+                      {getSampleShortTag(s)}
                     </div>
                   </div>
                 </button>

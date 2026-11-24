@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Sparkles,
   CheckCircle2,
@@ -112,6 +112,21 @@ export const SimpleSmartPanel: React.FC<SimpleSmartPanelProps> = ({
 
   const hasColorStamp = Boolean(diagnosis?.metrics?.has_color_stamp);
 
+  // 判断当前参数是否已与智能诊断推荐方案一致（闭环状态反馈，避免与底部“下载扫描件”抢主按钮）
+  const isAlreadyOptimized = useMemo(() => {
+    const rec = diagnosis?.recommended_params;
+    if (!rec) return false;
+    const entries = Object.entries(rec).filter(([, val]) => val !== undefined && val !== null);
+    if (entries.length === 0) return false;
+    return entries.every(([key, recVal]) => {
+      const curVal = (params as unknown as Record<string, unknown>)[key];
+      if (typeof curVal === 'number' && typeof recVal === 'number') {
+        return Math.abs(curVal - recVal) < 1e-3;
+      }
+      return curVal === recVal;
+    });
+  }, [diagnosis, params]);
+
   return (
     <div className="flex flex-col h-full bg-[#0d121d] rounded-xl border border-slate-800 overflow-hidden">
       {/* 上半部分：独立可滚动内容区（严禁 flex-1 压缩导致卡片相互挤压） */}
@@ -165,16 +180,38 @@ export const SimpleSmartPanel: React.FC<SimpleSmartPanelProps> = ({
             </div>
           ) : null}
 
-          <OpticalButton
-            variant="primary"
-            magnetic="subtle"
-            onClick={onAutoOptimize}
-            disabled={isProcessing}
-            className="w-full min-h-[44px] rounded-xl text-xs font-semibold"
-          >
-            <Wand2 className="w-3.5 h-3.5 mr-1.5 transition-transform duration-300 group-hover:rotate-12" />
-            <span>一键按诊断结论自动优化</span>
-          </OpticalButton>
+          {!diagnosis ? (
+            <div className="rounded-xl px-3 py-2 bg-slate-900/60 border border-slate-800 text-[11px] font-mono text-slate-400 flex items-center">
+              <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin text-blue-400 flex-shrink-0" />
+              <span>正在分析退化特征并计算最优修复参数...</span>
+            </div>
+          ) : isAlreadyOptimized ? (
+            <div className="rounded-xl px-3 py-2 bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between gap-2 text-xs">
+              <span className="inline-flex items-center text-emerald-300 font-medium">
+                <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 flex-shrink-0" />
+                已应用诊断最优参数
+              </span>
+              <button
+                type="button"
+                onClick={onAutoOptimize}
+                disabled={isProcessing}
+                className="text-[11px] font-mono text-slate-300 hover:text-white underline disabled:opacity-40 flex-shrink-0"
+              >
+                重新执行
+              </button>
+            </div>
+          ) : (
+            <OpticalButton
+              variant="subtle"
+              magnetic="subtle"
+              onClick={onAutoOptimize}
+              disabled={isProcessing}
+              className="w-full min-h-[42px] rounded-xl text-xs font-semibold border-blue-500/40"
+            >
+              <Wand2 className="w-3.5 h-3.5 mr-1.5 text-blue-400 transition-transform duration-300 group-hover:rotate-12" />
+              <span>恢复诊断推荐参数</span>
+            </OpticalButton>
+          )}
         </div>
 
         {/* 2. 四大成片风格直选 */}

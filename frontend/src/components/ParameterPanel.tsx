@@ -273,10 +273,18 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
   const [highlightedModules, setHighlightedModules] = useState<Set<ModuleGroupId>>(new Set());
   const [activeTuneStage, setActiveTuneStage] = useState<TuneStageTab>('s3');
   const flashTimerRef = useRef<number | null>(null);
+  const sliderDebounceRef = useRef<number | null>(null);
+  const isDraggingRangeRef = useRef<boolean>(false);
+  const rangeDirtyRef = useRef<boolean>(false);
+  const latestParamsRef = useRef<PipelineParams>(params);
+  latestParamsRef.current = params;
+  const onApplyRef = useRef(onApply);
+  onApplyRef.current = onApply;
 
   useEffect(() => {
     return () => {
       if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+      if (sliderDebounceRef.current) window.clearTimeout(sliderDebounceRef.current);
     };
   }, []);
 
@@ -328,16 +336,47 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
     }, 2200);
   };
 
-  // 仅更新状态（用于滑块拖动过程中的流畅预览）
-  const update = <K extends keyof PipelineParams>(key: K, val: PipelineParams[K]) => {
+  // 仅更新状态并用最新参数引用防抖触发（支持键盘方向键与鼠标移出滑块外松手）
+  const updateRange = <K extends keyof PipelineParams>(key: K, val: PipelineParams[K]) => {
     setPresetNotice(null);
-    onChange({ ...params, [key]: val });
+    const next = { ...latestParamsRef.current, [key]: val };
+    latestParamsRef.current = next;
+    onChange(next);
+    if (isDraggingRangeRef.current) {
+      rangeDirtyRef.current = true;
+      return;
+    }
+    if (sliderDebounceRef.current) window.clearTimeout(sliderDebounceRef.current);
+    sliderDebounceRef.current = window.setTimeout(() => {
+      onApplyRef.current(latestParamsRef.current);
+    }, 260);
+  };
+
+  const handleRangePointerDown = () => {
+    isDraggingRangeRef.current = true;
+    rangeDirtyRef.current = false;
+    if (sliderDebounceRef.current) {
+      window.clearTimeout(sliderDebounceRef.current);
+      sliderDebounceRef.current = null;
+    }
+    const finishDrag = () => {
+      window.removeEventListener('pointerup', finishDrag);
+      window.removeEventListener('pointercancel', finishDrag);
+      isDraggingRangeRef.current = false;
+      if (rangeDirtyRef.current) {
+        rangeDirtyRef.current = false;
+        onApplyRef.current(latestParamsRef.current);
+      }
+    };
+    window.addEventListener('pointerup', finishDrag);
+    window.addEventListener('pointercancel', finishDrag);
   };
 
   // 更新状态并立即触发后端计算（只改当前这一项，不动其他手动配置）
   const updateAndApply = <K extends keyof PipelineParams>(key: K, val: PipelineParams[K]) => {
     setPresetNotice(null);
-    const next = { ...params, [key]: val };
+    const next = { ...latestParamsRef.current, [key]: val };
+    latestParamsRef.current = next;
     onChange(next);
     onApply(next);
   };
@@ -688,9 +727,8 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                     max="91"
                     step="2"
                     value={params.illumination_kernel_size}
-                    onChange={(e) => update('illumination_kernel_size', parseInt(e.target.value))}
-                    onMouseUp={() => onApply()}
-                    onTouchEnd={() => onApply()}
+                    onPointerDown={handleRangePointerDown}
+                    onChange={(e) => updateRange('illumination_kernel_size', parseInt(e.target.value, 10))}
                     className="w-full accent-blue-600"
                   />
                   <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
@@ -711,9 +749,8 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                     max="4.0"
                     step="0.5"
                     value={params.clahe_clip_limit}
-                    onChange={(e) => update('clahe_clip_limit', parseFloat(e.target.value))}
-                    onMouseUp={() => onApply()}
-                    onTouchEnd={() => onApply()}
+                    onPointerDown={handleRangePointerDown}
+                    onChange={(e) => updateRange('clahe_clip_limit', parseFloat(e.target.value))}
                     className="w-full accent-blue-600"
                   />
                   <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
@@ -755,9 +792,8 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                   max="26"
                   step="2"
                   value={params.notch_radius}
-                  onChange={(e) => update('notch_radius', parseFloat(e.target.value))}
-                  onMouseUp={() => onApply()}
-                  onTouchEnd={() => onApply()}
+                  onPointerDown={handleRangePointerDown}
+                  onChange={(e) => updateRange('notch_radius', parseFloat(e.target.value))}
                   className="w-full accent-blue-600"
                 />
                 <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
@@ -820,9 +856,8 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                         max="21"
                         step="2"
                         value={params.motion_length}
-                        onChange={(e) => update('motion_length', parseInt(e.target.value))}
-                        onMouseUp={() => onApply()}
-                        onTouchEnd={() => onApply()}
+                        onPointerDown={handleRangePointerDown}
+                        onChange={(e) => updateRange('motion_length', parseInt(e.target.value, 10))}
                         className="w-full accent-blue-600"
                       />
                     </div>
@@ -838,9 +873,8 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                         max="180"
                         step="5"
                         value={params.motion_angle}
-                        onChange={(e) => update('motion_angle', parseFloat(e.target.value))}
-                        onMouseUp={() => onApply()}
-                        onTouchEnd={() => onApply()}
+                        onPointerDown={handleRangePointerDown}
+                        onChange={(e) => updateRange('motion_angle', parseFloat(e.target.value))}
                         className="w-full accent-blue-600"
                       />
                     </div>
@@ -857,9 +891,8 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                       min="1"
                       max="8"
                       value={params.defocus_radius}
-                      onChange={(e) => update('defocus_radius', parseInt(e.target.value))}
-                      onMouseUp={() => onApply()}
-                      onTouchEnd={() => onApply()}
+                      onPointerDown={handleRangePointerDown}
+                      onChange={(e) => updateRange('defocus_radius', parseInt(e.target.value, 10))}
                       className="w-full accent-blue-600"
                     />
                   </div>
@@ -877,9 +910,8 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                     max="0.080"
                     step="0.005"
                     value={params.wiener_k}
-                    onChange={(e) => update('wiener_k', parseFloat(e.target.value))}
-                    onMouseUp={() => onApply()}
-                    onTouchEnd={() => onApply()}
+                    onPointerDown={handleRangePointerDown}
+                    onChange={(e) => updateRange('wiener_k', parseFloat(e.target.value))}
                     className="w-full accent-blue-600"
                   />
                   <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
@@ -936,9 +968,8 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                       max="0.36"
                       step="0.02"
                       value={params.sauvola_k}
-                      onChange={(e) => update('sauvola_k', parseFloat(e.target.value))}
-                      onMouseUp={() => onApply()}
-                      onTouchEnd={() => onApply()}
+                      onPointerDown={handleRangePointerDown}
+                      onChange={(e) => updateRange('sauvola_k', parseFloat(e.target.value))}
                       className="w-full accent-blue-600"
                     />
                     <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
@@ -959,9 +990,8 @@ export const ParameterPanel: React.FC<ParameterPanelProps> = ({
                     max="1.0"
                     step="0.1"
                     value={params.sharpen_strength}
-                    onChange={(e) => update('sharpen_strength', parseFloat(e.target.value))}
-                    onMouseUp={() => onApply()}
-                    onTouchEnd={() => onApply()}
+                    onPointerDown={handleRangePointerDown}
+                    onChange={(e) => updateRange('sharpen_strength', parseFloat(e.target.value))}
                     className="w-full accent-blue-600"
                   />
                   <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">

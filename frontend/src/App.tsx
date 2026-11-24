@@ -408,16 +408,28 @@ export default function App() {
     return () => window.removeEventListener('paste', handlePaste);
   }, [captureSessionId, loadUserFile]);
 
-  // 选择内置示例图片
+  // 选择内置示例图片（点击瞬间用缩略图秒切工作台进度态，0ms 响应）
   const handleSelectSample = async (sample: SampleMeta) => {
+    const hadPreviousImage = Boolean(rawImageBase64);
     setShowSampleMenu(false);
-    setIsProcessing(true);
-    setProgressPercent(10);
-    setProgressLabel(`正在载入样张：${sample.title}...`);
     setErrorMessage(null);
     setActiveSampleName(sample.filename);
     setActiveSampleTitle(sample.title);
     setSweepData(null);
+    setRectifiedRawBase64(null);
+    setFinalImageBase64(null);
+    setStages([]);
+    setActiveStage(null);
+    setActiveDiagKey(null);
+    setDiagnosis(null);
+    setMetrics(null);
+    setOcrData(null);
+    if (sample.thumbnail_base64) {
+      setRawImageBase64(sample.thumbnail_base64);
+    }
+    setIsProcessing(true);
+    setProgressPercent(10);
+    setProgressLabel(`正在载入样张：${sample.title}...`);
 
     const mergedParams: PipelineParams = {
       ...DEFAULT_PIPELINE_PARAMS,
@@ -443,6 +455,9 @@ export default function App() {
       }
     } catch (err: any) {
       console.error(err);
+      if (!hadPreviousImage) {
+        setRawImageBase64(null);
+      }
       setErrorMessage(err.message || '加载示例图片失败');
       setIsProcessing(false);
     }
@@ -743,41 +758,43 @@ export default function App() {
         </div>
 
         <div className="flex items-center space-x-1.5 sm:space-x-2 flex-nowrap justify-end min-w-0">
-          {/* 极简模式 / 专业视图 一键双模式切换 */}
-          <div
-            className="flex bg-[#090d16] p-0.5 rounded-lg border border-slate-800 flex-shrink-0"
-            role="group"
-            aria-label="切换极简模式或专业视图"
-          >
-            <button
-              onClick={() => {
-                setWorkspaceMode('simple');
-                setActiveStage(null);
-                setActiveDiagKey(null);
-              }}
-              className={`min-h-[34px] px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium flex items-center whitespace-nowrap transition-colors ${
-                workspaceMode === 'simple'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+          {/* 极简模式 / 专业视图 一键双模式切换（仅工作台有图时显示，未导图欢迎态保持纯净） */}
+          {rawImageBase64 && (
+            <div
+              className="flex bg-[#090d16] p-0.5 rounded-lg border border-slate-800 flex-shrink-0"
+              role="group"
+              aria-label="切换极简模式或专业视图"
             >
-              <Wand2 className="w-3.5 h-3.5 mr-1 flex-shrink-0" />
-              <span className="sm:hidden">极简</span>
-              <span className="hidden sm:inline">极简模式</span>
-            </button>
-            <button
-              onClick={() => setWorkspaceMode('expert')}
-              className={`min-h-[34px] px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium flex items-center whitespace-nowrap transition-colors ${
-                workspaceMode === 'expert'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Sliders className="w-3.5 h-3.5 mr-1 flex-shrink-0" />
-              <span className="sm:hidden">专业</span>
-              <span className="hidden sm:inline">专业视图</span>
-            </button>
-          </div>
+              <button
+                onClick={() => {
+                  setWorkspaceMode('simple');
+                  setActiveStage(null);
+                  setActiveDiagKey(null);
+                }}
+                className={`min-h-[34px] px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium flex items-center whitespace-nowrap transition-colors ${
+                  workspaceMode === 'simple'
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Wand2 className="w-3.5 h-3.5 mr-1 flex-shrink-0" />
+                <span className="sm:hidden">极简</span>
+                <span className="hidden sm:inline">极简模式</span>
+              </button>
+              <button
+                onClick={() => setWorkspaceMode('expert')}
+                className={`min-h-[34px] px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium flex items-center whitespace-nowrap transition-colors ${
+                  workspaceMode === 'expert'
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Sliders className="w-3.5 h-3.5 mr-1 flex-shrink-0" />
+                <span className="sm:hidden">专业</span>
+                <span className="hidden sm:inline">专业视图</span>
+              </button>
+            </div>
+          )}
 
           {/* 主题外观一键切换（桌面端顶栏下拉；移动端收纳至底部抽屉菜单） */}
           <div ref={themeMenuRef} className="hidden lg:block relative flex-shrink-0">
@@ -848,16 +865,18 @@ export default function App() {
             )}
           </div>
 
-          {/* 手机扫码无线拍传（桌面端顶栏按钮；移动端收纳至底部抽屉菜单） */}
-          <button
-            onClick={() => setShowPhoneModal(true)}
-            data-fx-magnet="subtle"
-            className="hidden lg:flex items-center px-3 py-1.5 rounded-lg bg-[#121826] hover:bg-[#192338] text-slate-200 border border-slate-800 hover:border-amber-400/40 text-xs transition-colors flex-shrink-0"
-            title="用手机扫码直接拍照传到电脑工作台"
-          >
-            <QrCode className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
-            <span>手机拍传</span>
-          </button>
+          {/* 手机扫码无线拍传（仅工作台有图时出现在桌面端顶栏；欢迎态直接用卡片主按钮，避免重复） */}
+          {rawImageBase64 && (
+            <button
+              onClick={() => setShowPhoneModal(true)}
+              data-fx-magnet="subtle"
+              className="hidden lg:flex items-center px-3 py-1.5 rounded-lg bg-[#121826] hover:bg-[#192338] text-slate-200 border border-slate-800 hover:border-amber-400/40 text-xs transition-colors flex-shrink-0"
+              title="用手机扫码直接拍照传到电脑工作台"
+            >
+              <QrCode className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
+              <span>手机拍传</span>
+            </button>
+          )}
 
           {/* 重温开屏动画按钮（桌面端顶栏按钮；移动端收纳至底部抽屉菜单） */}
           <button
@@ -870,8 +889,8 @@ export default function App() {
             <span>重温开屏</span>
           </button>
 
-          {/* 示例图库下拉菜单（桌面端顶栏下拉；移动端收纳至底部抽屉菜单） */}
-          {samples.length > 0 && (
+          {/* 示例图库下拉菜单（仅工作台有图时出现在桌面端顶栏；欢迎态下方已有快捷样张条） */}
+          {rawImageBase64 && samples.length > 0 && (
             <div ref={sampleMenuRef} className="hidden lg:block relative flex-shrink-0">
               <button
                 onClick={() => setShowSampleMenu((v) => !v)}
@@ -933,29 +952,17 @@ export default function App() {
             </button>
           )}
 
-          {/* 上传新照片按钮（桌面端顶栏；移动端在抽屉菜单中与拍照并列展示） */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isProcessing}
-            data-fx-magnet="subtle"
-            aria-label={rawImageBase64 ? '更换文档图片' : '上传文档图片'}
-            className="hidden lg:flex min-h-[34px] items-center px-3 py-1.5 rounded-lg bg-[#161f33] hover:bg-[#1e2a45] text-slate-200 border border-slate-700/80 hover:border-blue-400/50 text-xs font-medium transition-all flex-shrink-0"
-          >
-            <Upload className="w-3.5 h-3.5 mr-1.5 text-blue-400" />
-            <span>{rawImageBase64 ? '更换图片' : '上传图片'}</span>
-          </button>
-
-          {/* 移动端无图时的快捷直拍按钮（< lg 显示） */}
-          {!rawImageBase64 && (
+          {/* 更换文档图片按钮（仅桌面端工作台有图时显示；欢迎态已有显著上传入口） */}
+          {rawImageBase64 && (
             <button
-              type="button"
-              onClick={() => mobileCameraRef.current?.click()}
+              onClick={() => fileInputRef.current?.click()}
               disabled={isProcessing}
-              aria-label="调用相机直接拍照"
-              className="flex lg:hidden min-h-[38px] items-center px-2.5 py-1.5 rounded-lg bg-blue-600 text-white ds-keep-white text-xs font-semibold flex-shrink-0"
+              data-fx-magnet="subtle"
+              aria-label="更换文档图片"
+              className="hidden lg:flex min-h-[34px] items-center px-3 py-1.5 rounded-lg bg-[#161f33] hover:bg-[#1e2a45] text-slate-200 border border-slate-700/80 hover:border-blue-400/50 text-xs font-medium transition-all flex-shrink-0"
             >
-              <Camera className="w-3.5 h-3.5 mr-1" />
-              <span>拍照</span>
+              <Upload className="w-3.5 h-3.5 mr-1.5 text-blue-400" />
+              <span>更换图片</span>
             </button>
           )}
 

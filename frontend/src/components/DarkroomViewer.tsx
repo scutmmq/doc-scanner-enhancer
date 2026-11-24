@@ -53,6 +53,9 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
   const [viewMode, setViewMode] = useState<'slider' | 'side-by-side' | 'corner-edit'>('slider');
   const [showOcrOverlay, setShowOcrOverlay] = useState<boolean>(false);
   const [zoom, setZoom] = useState<number>(1);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState<boolean>(false);
+  const [isSliderDragging, setIsSliderDragging] = useState<boolean>(false);
 
   // 原始图像与增强图像的真实像素宽高
   const [origSize, setOrigSize] = useState<{ w: number; h: number }>({ w: 700, h: 900 });
@@ -67,9 +70,10 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
   ]);
   const [draggingCornerIdx, setDraggingCornerIdx] = useState<number | null>(null);
 
+  const stageViewportRef = useRef<HTMLDivElement>(null);
   const sliderFrameRef = useRef<HTMLDivElement>(null);
   const cornerSvgRef = useRef<SVGSVGElement>(null);
-  const isDraggingSlider = useRef<boolean>(false);
+  const panStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
 
   // 当检测到新的文档四角点或图像尺寸变化时同步初始化角点
   useEffect(() => {
@@ -87,29 +91,46 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
     }
   }, [detectedCorners, origSize.w, origSize.h]);
 
-  const handleSliderMouseDown = (e?: React.MouseEvent) => {
-    isDraggingSlider.current = true;
-    if (e && sliderFrameRef.current) {
-      const rect = sliderFrameRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const pos = Math.max(0, Math.min(100, (x / rect.width) * 100));
-      setSliderPos(pos);
+  useEffect(() => {
+    if (zoom <= 1) {
+      setPan({ x: 0, y: 0 });
     }
-  };
+  }, [zoom]);
+
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [originalImage, viewMode]);
+
+  // 支持滚轮平滑缩放（Ctrl/普通滚轮统一拦截，防止页面抖动）
+  useEffect(() => {
+    const el = stageViewportRef.current;
+    if (!el || !originalImage || viewMode === 'corner-edit') return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.15 : -0.15;
+      setZoom((prev) => Math.round(Math.max(0.5, Math.min(3.0, prev + delta)) * 100) / 100);
+    };
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [originalImage, viewMode]);
+
+  const updateSliderFromClientX = useCallback((clientX: number) => {
+    const frame = sliderFrameRef.current;
+    if (!frame) return;
+    const rect = frame.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const pos = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    setSliderPos(pos);
+  }, []);
 
   const handleMouseUp = useCallback(() => {
-    isDraggingSlider.current = false;
     setDraggingCornerIdx(null);
   }, []);
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
-      if (isDraggingSlider.current && sliderFrameRef.current) {
-        const rect = sliderFrameRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const pos = Math.max(0, Math.min(100, (x / rect.width) * 100));
-        setSliderPos(pos);
-      } else if (draggingCornerIdx !== null && cornerSvgRef.current) {
+      if (draggingCornerIdx !== null && cornerSvgRef.current) {
         const rect = cornerSvgRef.current.getBoundingClientRect();
         const relX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         const relY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
@@ -129,13 +150,7 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
     (e: TouchEvent) => {
       if (e.touches.length === 0) return;
       const touch = e.touches[0];
-      if (isDraggingSlider.current && sliderFrameRef.current) {
-        e.preventDefault();
-        const rect = sliderFrameRef.current.getBoundingClientRect();
-        const x = touch.clientX - rect.left;
-        const pos = Math.max(0, Math.min(100, (x / rect.width) * 100));
-        setSliderPos(pos);
-      } else if (draggingCornerIdx !== null && cornerSvgRef.current) {
+      if (draggingCornerIdx !== null && cornerSvgRef.current) {
         e.preventDefault();
         const rect = cornerSvgRef.current.getBoundingClientRect();
         const relX = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
@@ -153,6 +168,7 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
   );
 
   useEffect(() => {
+    if (draggingCornerIdx === null) return;
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('touchend', handleMouseUp);
@@ -165,7 +181,84 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
       window.removeEventListener('touchcancel', handleMouseUp);
       window.removeEventListener('touchmove', handleTouchMove);
     };
-  }, [handleMouseUp, handleMouseMove, handleTouchMove]);
+  }, [draggingCornerIdx, handleMouseUp, handleMouseMove, handleTouchMove]);
+
+  // 分割线手柄独立 Pointer Capture（无论是否放大都可独立拖动对比）
+  const handleHandlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDiagnosticView) return;
+    e.stopPropagation();
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsSliderDragging(true);
+    updateSliderFromClientX(e.clientX);
+  };
+
+  const handleHandlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isSliderDragging) return;
+    updateSliderFromClientX(e.clientX);
+  };
+
+  const handleHandlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isSliderDragging) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setIsSliderDragging(false);
+  };
+
+  // 主画布区：zoom <= 1 点击/拖拽直接控制滑块；zoom > 1 拖拽实现平滑平移看细节
+  const handleStagePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!originalImage || viewMode === 'corner-edit') return;
+    if (zoom > 1) {
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setIsPanning(true);
+      panStartRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+      return;
+    }
+    if (viewMode === 'slider' && !isDiagnosticView && sliderFrameRef.current?.contains(e.target as Node)) {
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setIsSliderDragging(true);
+      updateSliderFromClientX(e.clientX);
+    }
+  };
+
+  const handleStagePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isPanning && panStartRef.current && stageViewportRef.current) {
+      const rect = stageViewportRef.current.getBoundingClientRect();
+      const maxPanX = Math.max(120, rect.width * (zoom - 1) * 0.55);
+      const maxPanY = Math.max(120, rect.height * (zoom - 1) * 0.55);
+      const nextX = panStartRef.current.panX + (e.clientX - panStartRef.current.x);
+      const nextY = panStartRef.current.panY + (e.clientY - panStartRef.current.y);
+      setPan({
+        x: Math.max(-maxPanX, Math.min(maxPanX, nextX)),
+        y: Math.max(-maxPanY, Math.min(maxPanY, nextY)),
+      });
+      return;
+    }
+    if (isSliderDragging) {
+      updateSliderFromClientX(e.clientX);
+    }
+  };
+
+  const handleStagePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    if (isPanning) {
+      setIsPanning(false);
+      panStartRef.current = null;
+    }
+    if (isSliderDragging) {
+      setIsSliderDragging(false);
+    }
+  };
+
+  const resetZoomAndPan = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
 
   const cornerLabels = ['TL (左上)', 'TR (右上)', 'BR (右下)', 'BL (左下)'];
 
@@ -265,7 +358,7 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
           {/* 缩放控制 */}
           <div className="flex items-center bg-slate-900 rounded-lg border border-slate-800 px-1 tabular-nums flex-shrink-0">
             <button
-              onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
+              onClick={() => setZoom((z) => Math.round(Math.max(0.5, z - 0.25) * 100) / 100)}
               data-fx-sheen="off"
               className="min-w-[30px] min-h-[32px] flex items-center justify-center text-slate-400 hover:text-white rounded"
               title="缩小"
@@ -273,11 +366,17 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="px-1 text-[11px] text-slate-300 min-w-[38px] text-center">
-              {Math.round(zoom * 100)}%
-            </span>
             <button
-              onClick={() => setZoom((z) => Math.min(3.0, z + 0.25))}
+              type="button"
+              onClick={resetZoomAndPan}
+              data-fx-sheen="off"
+              className="px-1 text-[11px] text-slate-300 hover:text-white min-w-[40px] min-h-[32px] flex items-center justify-center"
+              title="点击复位 100%"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              onClick={() => setZoom((z) => Math.round(Math.min(3.0, z + 0.25) * 100) / 100)}
               data-fx-sheen="off"
               className="min-w-[30px] min-h-[32px] flex items-center justify-center text-slate-400 hover:text-white rounded"
               title="放大"
@@ -286,11 +385,11 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => setZoom(1)}
+              onClick={resetZoomAndPan}
               data-fx-sheen="off"
               className="min-w-[28px] min-h-[32px] flex items-center justify-center text-slate-500 hover:text-slate-300 ml-0.5 border-l border-slate-800 rounded"
-              title="重置缩放"
-              aria-label="重置缩放"
+              title="重置缩放与位置"
+              aria-label="重置缩放与位置"
             >
               <RotateCcw className="w-3 h-3" />
             </button>
@@ -298,8 +397,29 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
         </div>
       </div>
 
-      {/* 图像渲染核心暗房标定光学台面（点阵刻度 + 顶灯微聚光） */}
-      <div className="ds-optical-stage flex-1 relative overflow-hidden flex items-center justify-center p-4 select-none">
+      {/* 图像渲染核心暗房标定光学台面（点阵刻度 + 滚轮缩放 + 放大拖拽平移） */}
+      <div
+        ref={stageViewportRef}
+        onPointerDown={handleStagePointerDown}
+        onPointerMove={handleStagePointerMove}
+        onPointerUp={handleStagePointerUp}
+        onPointerCancel={handleStagePointerUp}
+        onDoubleClick={() => {
+          if (viewMode !== 'corner-edit') resetZoomAndPan();
+        }}
+        className={`ds-optical-stage flex-1 relative overflow-hidden flex items-center justify-center p-4 select-none ${
+          zoom > 1 && viewMode !== 'corner-edit'
+            ? isPanning
+              ? 'cursor-grabbing touch-none'
+              : 'cursor-grab touch-none'
+            : ''
+        }`}
+      >
+        {zoom > 1 && viewMode !== 'corner-edit' && (
+          <div className="ds-keep-white pointer-events-none absolute top-2.5 left-2.5 z-20 px-2.5 py-1 rounded-md bg-black/70 backdrop-blur-sm border border-slate-700/80 text-[10px] font-mono text-white">
+            滚轮缩放 · 拖拽平移 · 双击复位
+          </div>
+        )}
         {/* 算法实时运算 SSE 进度条反馈 */}
         {isProcessing && (
           <div className="absolute inset-0 bg-slate-950/65 backdrop-blur-[2px] z-30 flex flex-col items-center justify-center p-4">
@@ -444,8 +564,11 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
                   const img = e.currentTarget;
                   if (img.naturalWidth) setOrigSize({ w: img.naturalWidth, h: img.naturalHeight });
                 }}
-                className="max-h-full max-w-full object-contain transition-transform"
-                style={{ transform: `scale(${zoom})` }}
+                className="max-h-full max-w-full object-contain pointer-events-none"
+                style={{
+                  transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+                  transition: isPanning ? 'none' : 'transform 0.15s ease-out',
+                }}
               />
             </div>
 
@@ -454,8 +577,11 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
                 {stageName} (After)
               </span>
               <div
-                className="relative inline-block max-h-full max-w-full transition-transform"
-                style={{ transform: `scale(${zoom})` }}
+                className="relative inline-block max-h-full max-w-full"
+                style={{
+                  transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+                  transition: isPanning ? 'none' : 'transform 0.15s ease-out',
+                }}
               >
                 <img
                   src={processedImage || originalImage}
@@ -491,12 +617,19 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
           /* 滑块实时对比 (Before / After Slider) 或 诊断图独立检视 */
           <div
             ref={sliderFrameRef}
-            onMouseDown={!isDiagnosticView ? handleSliderMouseDown : undefined}
-            onTouchStart={!isDiagnosticView ? () => { isDraggingSlider.current = true; } : undefined}
             className={`relative inline-flex items-center justify-center h-full max-h-full max-w-full overflow-hidden rounded-lg border border-slate-700/60 shadow-[var(--doc-shadow)] ${
-              isDiagnosticView ? 'cursor-default' : 'cursor-ew-resize touch-none'
+              zoom > 1
+                ? isPanning
+                  ? 'cursor-grabbing touch-none'
+                  : 'cursor-grab touch-none'
+                : isDiagnosticView
+                ? 'cursor-default'
+                : 'cursor-ew-resize touch-none'
             }`}
-            style={{ transform: `scale(${zoom})`, transition: 'transform 0.15s ease-out' }}
+            style={{
+              transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+              transition: isPanning ? 'none' : 'transform 0.15s ease-out',
+            }}
           >
             {/* 基准层：处理后图像 (After) 或 阶段诊断图 */}
             <img
@@ -562,20 +695,39 @@ export const DarkroomViewer: React.FC<DarkroomViewerProps> = ({
               </div>
             )}
 
-            {/* 分割线与 44x44px 正圆触控手柄（flex-shrink-0 严防窄屏压扁） */}
+            {/* 分割线与 44x44px 正圆触控手柄（独立 Pointer Capture，放大后也可单独拖滑块） */}
             {processedImage && !isDiagnosticView && (
               <div
-                className="absolute top-0 bottom-0 w-0.5 bg-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.9)] z-20 flex items-center justify-center cursor-ew-resize pointer-events-none"
+                onPointerDown={handleHandlePointerDown}
+                onPointerMove={handleHandlePointerMove}
+                onPointerUp={handleHandlePointerUp}
+                onPointerCancel={handleHandlePointerUp}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    setSliderPos((p) => Math.max(0, p - 4));
+                  } else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    setSliderPos((p) => Math.min(100, p + 4));
+                  }
+                }}
+                role="slider"
+                tabIndex={0}
+                aria-label="左右拖动对比增强前后图像"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(sliderPos)}
+                className="absolute top-0 bottom-0 w-8 -translate-x-1/2 z-20 flex items-center justify-center cursor-ew-resize pointer-events-auto touch-none focus:outline-none"
                 style={{ left: `${sliderPos}%` }}
               >
-                <button
-                  type="button"
-                  data-fx="off"
-                  aria-label="左右拖动对比增强前后图像"
-                  className="pointer-events-auto flex-shrink-0 w-11 h-11 min-w-[44px] min-h-[44px] rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center text-white text-sm font-bold select-none cursor-grab active:cursor-grabbing hover:scale-110 transition-transform"
+                <div className="w-0.5 h-full bg-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.9)] pointer-events-none" />
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute flex-shrink-0 w-11 h-11 min-w-[44px] min-h-[44px] rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center text-white text-sm font-bold select-none transition-transform"
+                  style={{ transform: isSliderDragging ? 'scale(1.1)' : 'scale(1)' }}
                 >
                   ⇄
-                </button>
+                </div>
               </div>
             )}
           </div>
