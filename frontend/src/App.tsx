@@ -33,6 +33,7 @@ import { MobileCaptureView } from './components/MobileCaptureView';
 import { SimpleSmartPanel, DiagnosisReport } from './components/SimpleSmartPanel';
 import { OpticalButton } from './components/OpticalButton';
 import { MobileMenuDrawer } from './components/MobileMenuDrawer';
+import { WelcomePlatenStage } from './components/WelcomePlatenStage';
 
 interface SampleMeta {
   filename: string;
@@ -1001,117 +1002,17 @@ export default function App() {
       )}
 
       {/* ====================================================================
-          状态 A：未导入图片时的工作台欢迎与上手引导页
+          状态 A：未导入图片时的光学压稿台工作台欢迎与预演视图
       ==================================================================== */}
       {!rawImageBase64 ? (
-        <div className="ds-optical-stage flex-1 overflow-y-auto p-5 sm:p-6 flex flex-col items-center justify-center">
-          <div className="max-w-4xl w-full space-y-6">
-            {/* 核心上传与拖拽卡片 */}
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              data-fx-surface=""
-              className="group cursor-pointer rounded-2xl border-2 border-dashed border-slate-700/90 hover:border-blue-500 bg-[#0d121d]/90 hover:bg-[#111827] p-7 sm:p-10 transition-all text-center shadow-2xl"
-            >
-              <div className="w-14 h-14 rounded-2xl bg-blue-600/15 border border-blue-500/30 flex items-center justify-center mx-auto mb-4 group-hover:scale-105 group-hover:bg-blue-600/25 transition-all">
-                <Upload className="w-7 h-7 text-blue-400" />
-              </div>
-
-              <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight">
-                导入文档照片，自动诊断并还原清晰扫描件
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-400 mt-2 max-w-xl mx-auto leading-relaxed">
-                支持拖入 4K 手机原图、粘贴截图或手机扫码无线拍传。自动检测阴影、屏幕摩尔纹、失焦抖动、透视倾斜与红章批注并匹配最佳修复方案。
-              </p>
-
-              <div
-                className="mt-6 flex flex-wrap items-center justify-center gap-3"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <OpticalButton
-                  variant="primary"
-                  magnetic="strong"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="min-h-[48px] px-6 rounded-full text-xs sm:text-sm font-semibold"
-                >
-                  <Upload className="w-4 h-4 mr-2 transition-transform duration-300 group-hover:-translate-y-0.5" />
-                  <span>选择本地照片上传</span>
-                </OpticalButton>
-
-                {/* 移动端直接调用后置相机 */}
-                <OpticalButton
-                  variant="primary"
-                  magnetic="strong"
-                  onClick={() => mobileCameraRef.current?.click()}
-                  className="sm:hidden min-h-[48px] px-6 rounded-full text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 border-emerald-400/50"
-                >
-                  <Camera className="w-4 h-4 mr-2" />
-                  <span>直接拍照扫描</span>
-                </OpticalButton>
-
-                {/* 电脑端扫码无线拍传 */}
-                <OpticalButton
-                  variant="glass"
-                  magnetic="strong"
-                  onClick={() => setShowPhoneModal(true)}
-                  className="hidden sm:inline-flex min-h-[48px] px-6 rounded-full text-xs sm:text-sm font-medium"
-                >
-                  <QrCode className="w-4 h-4 mr-2 text-amber-400 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110" />
-                  <span>手机扫码拍传</span>
-                </OpticalButton>
-
-                <span className="hidden md:inline-flex min-h-[48px] items-center px-4 rounded-full bg-[#0a0f1a]/80 text-slate-400 border border-slate-800 text-xs font-mono">
-                  <ClipboardPaste className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
-                  ⌘V / Ctrl+V 直接粘贴
-                </span>
-              </div>
-            </div>
-
-            {/* 典型问题样张快捷体验区 */}
-            {samples.length > 0 && (
-              <div className="bg-[#0d121d] border border-slate-800/90 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center space-x-2">
-                    <Sparkles className="w-4 h-4 text-amber-400" />
-                    <span className="text-xs font-semibold text-slate-200">
-                      手头没有测试照片？点击下方典型问题样张立即体验：
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-slate-500 hidden sm:inline">
-                    涵盖 6 类常见手机翻拍退化问题
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                  {samples.map((s) => (
-                    <button
-                      key={s.filename}
-                      onClick={() => handleSelectSample(s)}
-                      data-fx-magnet="subtle"
-                      className="group bg-[#121826] hover:bg-[#172136] border border-slate-800 hover:border-blue-500/60 hover:shadow-[0_10px_28px_-8px_rgba(37,99,235,0.4)] rounded-xl p-2.5 text-left transition-all flex flex-col justify-between"
-                    >
-                      <div className="w-full h-24 bg-[#080b11] rounded border border-slate-800/80 overflow-hidden mb-2 flex items-center justify-center">
-                        <img
-                          src={s.thumbnail_base64}
-                          alt={s.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                        />
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-slate-200 group-hover:text-blue-300 flex items-center justify-between">
-                          <span className="truncate">{s.title}</span>
-                          <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-                        </div>
-                        <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-2 leading-snug">
-                          {s.subtitle}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <WelcomePlatenStage
+          samples={samples}
+          isDraggingOver={isDraggingOver}
+          onUploadClick={() => fileInputRef.current?.click()}
+          onCameraClick={() => mobileCameraRef.current?.click()}
+          onOpenPhoneRelay={() => setShowPhoneModal(true)}
+          onSelectSample={handleSelectSample}
+        />
       ) : (
         /* ====================================================================
             状态 B：已载入图片时的响应式双模式工作台（极简模式 / 专业视图）
